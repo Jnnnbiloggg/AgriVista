@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, inject, type Ref } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { useDashboard } from '../composables/useDashboard'
 import StatusBadge from './shared/StatusBadge.vue'
 import PageHeader from './shared/PageHeader.vue'
@@ -119,19 +121,61 @@ const slideDialog = useFormDialog<{
 
 const isHovering = ref(false)
 
-const mapIframe = ref<HTMLIFrameElement | null>(null)
+const mapContainer = ref<HTMLElement | null>(null)
+let map: L.Map | null = null
 
 const farmLocation = ref({
-  lat: 8.95,
-  lng: 125.535,
+  lat: 9.00785805205403,
+  lng: 125.69000590658155,
   name: "Robrosa's Farm",
   address: 'Purok 4-Sitio Tagkiling, Brgy. Anticala 8600 Butuan City, Philippines',
 })
+
+const initializeMap = () => {
+  if (!mapContainer.value) return
+
+  map = L.map(mapContainer.value).setView([farmLocation.value.lat, farmLocation.value.lng], 17)
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(map)
+
+  const customIcon = L.icon({
+    iconUrl: '/logo-cropped.png',
+    iconSize: [55, 55], // Size of the icon
+    iconAnchor: [27, 55], // Point of the icon which will correspond to marker's location
+    popupAnchor: [0, -55], // Point from which the popup should open relative to the iconAnchor
+  })
+
+  const marker = L.marker([farmLocation.value.lat, farmLocation.value.lng], {
+    icon: customIcon,
+  }).addTo(map)
+
+  marker.bindPopup(`
+    <div style="text-align: center;">
+      <strong>${farmLocation.value.name}</strong><br/>
+      <span style="font-size: 0.9em;">${farmLocation.value.address}</span>
+    </div>
+  `)
+}
 
 onMounted(async () => {
   await fetchCarouselSlides()
   await fetchDashboardActivities()
   setupRealtimeSubscription()
+
+  setTimeout(() => {
+    initializeMap()
+  }, 100)
+})
+
+onBeforeUnmount(() => {
+  if (map) {
+    map.remove()
+    map = null
+  }
 })
 
 const handleAddSlide = () => {
@@ -181,8 +225,8 @@ const isFormValid = computed(() => {
 const carouselCycle = computed(() => !isHovering.value)
 
 const resetMapView = () => {
-  if (mapIframe.value) {
-    mapIframe.value.src = `https://www.openstreetmap.org/export/embed.html?bbox=125.5250,8.9400,125.5450,8.9600&layer=mapnik&marker=8.9500,125.5350`
+  if (map) {
+    map.setView([farmLocation.value.lat, farmLocation.value.lng], 15)
   }
 }
 </script>
@@ -313,19 +357,9 @@ const resetMapView = () => {
               <v-divider></v-divider>
 
               <v-card-text class="pa-4">
-                <!-- OpenStreetMap iframe -->
+                <!-- Leaflet Map -->
                 <div class="map-container position-relative">
-                  <iframe
-                    ref="mapIframe"
-                    width="100%"
-                    height="300"
-                    frameborder="0"
-                    scrolling="no"
-                    marginheight="0"
-                    marginwidth="0"
-                    :src="`https://www.openstreetmap.org/export/embed.html?bbox=125.5250,8.9400,125.5450,8.9600&layer=mapnik&marker=8.9500,125.5350`"
-                    style="border-radius: 12px"
-                  ></iframe>
+                  <div ref="mapContainer" class="leaflet-map"></div>
 
                   <!-- Reset Map Button -->
                   <v-btn
@@ -616,11 +650,18 @@ const resetMapView = () => {
   position: relative;
 }
 
+.leaflet-map {
+  width: 100%;
+  height: 300px;
+  border-radius: 12px;
+  z-index: 1;
+}
+
 .map-reset-btn {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 10;
+  z-index: 1000;
 }
 
 /* Modern List Item */
