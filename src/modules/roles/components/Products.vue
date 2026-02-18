@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useProducts } from '../composables/useProducts'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
@@ -23,6 +24,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const drawer = inject<Ref<boolean>>('drawer')
+const router = useRouter()
+const route = useRoute()
 
 // Get user info from auth store
 const authStore = useAuthStore()
@@ -131,10 +134,26 @@ const { handleSearch, handleClearSearch, handleSettingsClick } = usePageActions(
 })
 
 // Admin tab
-const adminTab = ref('products')
+const adminTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['products', 'orders'].includes(tab) ? tab : 'products'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 // User tab
-const userTab = ref('products')
+const userTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['products', 'myOrders'].includes(tab) ? tab : 'products'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 const categories = ['Fruits', 'Vegetables', 'Herbs', 'Seeds', 'Other']
 
@@ -266,6 +285,10 @@ const reservationDialog = useFormDialog<ReservationForm>({
 
 // Load data on component mount
 onMounted(async () => {
+  if (!route.query.tab) {
+    router.replace({ query: { ...route.query, tab: 'products' } })
+  }
+
   if (props.userType === 'admin') {
     await fetchProducts()
     await fetchOrders()

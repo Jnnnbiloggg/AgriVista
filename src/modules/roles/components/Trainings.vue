@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTrainings } from '../composables/useTrainings'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
@@ -23,6 +24,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const drawer = inject<Ref<boolean>>('drawer')
+const router = useRouter()
+const route = useRoute()
 
 // Get user info from auth store
 const authStore = useAuthStore()
@@ -146,10 +149,26 @@ const {
 
 // View filter and admin tab
 const viewFilter = ref<'in_progress' | 'completed'>('in_progress')
-const adminTab = ref('trainings')
+const adminTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['trainings', 'registrations'].includes(tab) ? tab : 'trainings'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 // User tab
-const userTab = ref('browse')
+const userTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['browse', 'myRegistrations'].includes(tab) ? tab : 'browse'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 // Topic input for training dialog
 const topicInput = ref('')
@@ -245,6 +264,11 @@ const showRegisterDialog = ref(false)
 
 // Load data on component mount
 onMounted(async () => {
+  if (!route.query.tab) {
+    const defaultTab = props.userType === 'admin' ? 'trainings' : 'browse'
+    router.replace({ query: { ...route.query, tab: defaultTab } })
+  }
+
   if (props.userType === 'admin') {
     await fetchTrainings()
     await fetchRegistrations()

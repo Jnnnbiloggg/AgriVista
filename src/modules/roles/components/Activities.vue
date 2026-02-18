@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useActivities } from '../composables/useActivities'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
@@ -22,6 +23,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const drawer = inject<Ref<boolean>>('drawer')
+const router = useRouter()
+const route = useRoute()
 
 // Get user info from auth store
 const authStore = useAuthStore()
@@ -148,10 +151,26 @@ const { imageFile, imagePreview, handleImageSelect, removeImage } = useImageHand
 })
 
 // Admin tab
-const adminTab = ref('activities')
+const adminTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['activities', 'bookings', 'appointments'].includes(tab) ? tab : 'activities'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 // User tab (for viewing activities and appointments)
-const userTab = ref('activities')
+const userTab = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return ['activities', 'bookings', 'appointments'].includes(tab) ? tab : 'activities'
+  },
+  set: (val) => {
+    router.replace({ query: { ...route.query, tab: val } })
+  },
+})
 
 const appointmentTypes = [
   'Farm Tour',
@@ -347,6 +366,10 @@ const activityDialog = useFormDialog<{
 
 // Load data on component mount
 onMounted(async () => {
+  if (!route.query.tab) {
+    router.replace({ query: { ...route.query, tab: 'activities' } })
+  }
+
   if (props.userType === 'admin') {
     await fetchActivities()
     await fetchBookings()
