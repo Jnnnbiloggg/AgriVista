@@ -9,6 +9,9 @@ export interface UserProfile {
   email: string
   fullName: string
   userType: 'admin' | 'user'
+  sex?: string | null
+  address?: string | null
+  contactNumber?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -25,6 +28,10 @@ export const useAuthStore = defineStore('auth', () => {
   const userEmail = computed(() => user.value?.email || '')
   const userId = computed(() => user.value?.id || '')
   const fullName = computed(() => userProfile.value?.fullName || 'User')
+  const isProfileComplete = computed(() => {
+    if (!userProfile.value || userProfile.value.userType !== 'user') return true
+    return !!(userProfile.value.sex && userProfile.value.address && userProfile.value.contactNumber)
+  })
 
   // Actions
   function setUser(newUser: User | null) {
@@ -68,6 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
     userEmail,
     userId,
     fullName,
+    isProfileComplete,
     // Actions
     setUser,
     setSession,

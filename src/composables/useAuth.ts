@@ -31,18 +31,31 @@ export function useAuth() {
 
         // Determine user type based on email
         const userType = authStore.determineUserType(session.user.email || '')
+
+        // Load extended profile from user_profiles table
+        const { data: profileData } = await supabase
+          .from('user_profiles')
+          .select('sex, address, contact_number')
+          .eq('id', session.user.id)
+          .single()
+
         authStore.setUserProfile({
           id: session.user.id,
           email: session.user.email || '',
           fullName:
             session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
           userType,
+          sex: profileData?.sex ?? null,
+          address: profileData?.address ?? null,
+          contactNumber: profileData?.contact_number ?? null,
         })
       }
     } catch (err) {
       console.error('Error initializing auth:', err)
       authStore.clearAuth()
     } finally {
+      // Mark initialization complete BEFORE setting up the listener,
+      // so the listener knows not to overwrite the loaded profile.
       authStore.setLoading(false)
     }
   }
@@ -82,11 +95,22 @@ export function useAuth() {
 
         authStore.setSession(data.session)
         authStore.setUser(data.user)
+
+        // Load extended profile from user_profiles table
+        const { data: profileData } = await supabase
+          .from('user_profiles')
+          .select('sex, address, contact_number')
+          .eq('id', data.user.id)
+          .single()
+
         authStore.setUserProfile({
           id: data.user.id,
           email: data.user.email || '',
           fullName: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'User',
           userType: actualUserType,
+          sex: profileData?.sex ?? null,
+          address: profileData?.address ?? null,
+          contactNumber: profileData?.contact_number ?? null,
         })
 
         // Redirect based on user type
@@ -231,6 +255,13 @@ export function useAuth() {
         const userEmail = session.user.email || ''
         const actualUserType = authStore.determineUserType(userEmail)
 
+        // Load extended profile from user_profiles table
+        const { data: profileData } = await supabase
+          .from('user_profiles')
+          .select('sex, address, contact_number')
+          .eq('id', session.user.id)
+          .single()
+
         authStore.setUserProfile({
           id: session.user.id,
           email: userEmail,
@@ -240,6 +271,9 @@ export function useAuth() {
             userEmail.split('@')[0] ||
             'User',
           userType: actualUserType,
+          sex: profileData?.sex ?? null,
+          address: profileData?.address ?? null,
+          contactNumber: profileData?.contact_number ?? null,
         })
 
         // Redirect to user dashboard (Google OAuth is only for regular users)
@@ -283,22 +317,65 @@ export function useAuth() {
   }
 
   /**
-   * Set up auth state change listener
+   * Set up auth state change listener.
+   * Should be called AFTER initializeAuth() completes so isLoading is false.
    */
   function setupAuthListener() {
     supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (event === 'SIGNED_IN' && session) {
+        // If initializeAuth is still running (isLoading=true), skip — it will
+        // handle the profile. This prevents a race on page reload.
+        if (authStore.isLoading) return
+
         authStore.setSession(session)
         authStore.setUser(session.user)
 
         const userType = authStore.determineUserType(session.user.email || '')
-        authStore.setUserProfile({
-          id: session.user.id,
-          email: session.user.email || '',
-          fullName:
-            session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-          userType,
-        })
+
+        // If a profile already exists for this user, preserve extended fields.
+        const existingProfile = authStore.userProfile
+        if (existingProfile && existingProfile.id === session.user.id) {
+          authStore.setUserProfile({
+            ...existingProfile,
+            email: session.user.email || '',
+            fullName:
+              session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+            userType,
+          })
+        } else {
+          // Fresh sign-in with no profile yet — fetch extended data from DB.
+          try {
+            const { data: profileData } = await supabase
+              .from('user_profiles')
+              .select('sex, address, contact_number')
+              .eq('id', session.user.id)
+              .single()
+
+            authStore.setUserProfile({
+              id: session.user.id,
+              email: session.user.email || '',
+              fullName:
+                session.user.user_metadata?.full_name ||
+                session.user.email?.split('@')[0] ||
+                'User',
+              userType,
+              sex: profileData?.sex ?? null,
+              address: profileData?.address ?? null,
+              contactNumber: profileData?.contact_number ?? null,
+            })
+          } catch (err) {
+            console.error('Error loading profile in auth listener:', err)
+            authStore.setUserProfile({
+              id: session.user.id,
+              email: session.user.email || '',
+              fullName:
+                session.user.user_metadata?.full_name ||
+                session.user.email?.split('@')[0] ||
+                'User',
+              userType,
+            })
+          }
+        }
       } else if (event === 'SIGNED_OUT') {
         authStore.clearAuth()
       } else if (event === 'TOKEN_REFRESHED' && session) {

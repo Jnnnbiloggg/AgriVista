@@ -14,6 +14,7 @@ import { usePageActions } from '@/composables/usePageActions'
 import { formatDate } from '@/utils/formatters'
 import DrawerToggle from '@/components/shared/DrawerToggle.vue'
 import PageHeader from './shared/PageHeader.vue'
+import UserDetailModal from '@/components/shared/UserDetailModal.vue'
 
 interface Props {
   userType: 'admin' | 'user'
@@ -428,6 +429,15 @@ const registrationHeaders = [
   { title: 'Actions', key: 'actions' },
 ]
 
+// User Detail Modal
+const showUserDetail = ref(false)
+const userDetailRecord = ref<any | null>(null)
+
+const openUserDetail = (record: any) => {
+  userDetailRecord.value = record
+  showUserDetail.value = true
+}
+
 // Check if user has already registered for a training
 const getUserRegistration = (trainingId: number) => {
   return registrations.value.find(
@@ -822,6 +832,8 @@ const cancelUserRegistration = async (registrationId: number) => {
                     :items="registrations"
                     item-value="id"
                     hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item)"
                   >
                     <template v-slot:item.created_at="{ item }">
                       {{ new Date(item.created_at).toLocaleDateString() }}
@@ -1326,10 +1338,25 @@ const cancelUserRegistration = async (registrationId: number) => {
       :timeout="3000"
       location="top"
     />
+
+    <!-- User Detail Modal -->
+    <UserDetailModal
+      v-model="showUserDetail"
+      :record="userDetailRecord"
+      record-type="registration"
+    />
   </div>
 </template>
 
 <style scoped>
+.clickable-rows :deep(tbody tr) {
+  cursor: pointer;
+}
+
+.clickable-rows :deep(tbody tr:hover td) {
+  background: rgba(76, 175, 80, 0.06);
+}
+
 .gap-2 {
   gap: 8px;
 }

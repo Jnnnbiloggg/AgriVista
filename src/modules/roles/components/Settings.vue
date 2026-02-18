@@ -25,6 +25,68 @@ const editableFullName = ref('')
 const isEditingName = ref(false)
 const nameLoading = ref(false)
 
+// Extended profile (sex, address, contact number)
+const isEditingProfile = ref(false)
+const profileLoading = ref(false)
+const editableProfile = ref({
+  sex: authStore.userProfile?.sex || '',
+  address: authStore.userProfile?.address || '',
+  contactNumber: authStore.userProfile?.contactNumber || '',
+})
+
+const sexOptions = [
+  { title: 'Male', value: 'male' },
+  { title: 'Female', value: 'female' },
+  { title: 'Prefer not to say', value: 'prefer_not_to_say' },
+]
+
+const startEditingProfile = () => {
+  editableProfile.value = {
+    sex: authStore.userProfile?.sex || '',
+    address: authStore.userProfile?.address || '',
+    contactNumber: authStore.userProfile?.contactNumber || '',
+  }
+  isEditingProfile.value = true
+}
+
+const cancelEditingProfile = () => {
+  isEditingProfile.value = false
+}
+
+const saveProfile = async () => {
+  profileLoading.value = true
+  try {
+    const userId = authStore.userId
+    const payload = {
+      id: userId,
+      sex: editableProfile.value.sex || null,
+      address: editableProfile.value.address?.trim() || null,
+      contact_number: editableProfile.value.contactNumber?.trim() || null,
+    }
+
+    const { error } = await supabase.from('user_profiles').upsert(payload, { onConflict: 'id' })
+
+    if (error) throw error
+
+    // Update auth store
+    if (authStore.userProfile) {
+      authStore.setUserProfile({
+        ...authStore.userProfile,
+        sex: payload.sex,
+        address: payload.address,
+        contactNumber: payload.contact_number,
+      })
+    }
+
+    isEditingProfile.value = false
+    showSnackbar('Profile updated successfully!', 'success')
+  } catch (error: any) {
+    showSnackbar(error.message || 'Failed to update profile', 'error')
+  } finally {
+    profileLoading.value = false
+  }
+}
+
 // All users (for admin)
 interface UserData {
   id: string
@@ -497,9 +559,25 @@ const pageSubtitle = computed(() =>
 )
 
 // Load users on mount if admin
-onMounted(() => {
+onMounted(async () => {
   if (props.userType === 'admin') {
     fetchAllUsers()
+  }
+  // Sync extended profile from DB on mount (in case store is stale)
+  if (props.userType === 'user' && authStore.userId) {
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('sex, address, contact_number')
+      .eq('id', authStore.userId)
+      .single()
+    if (data && authStore.userProfile) {
+      authStore.setUserProfile({
+        ...authStore.userProfile,
+        sex: data.sex ?? null,
+        address: data.address ?? null,
+        contactNumber: data.contact_number ?? null,
+      })
+    }
   }
 })
 </script>
@@ -515,7 +593,19 @@ onMounted(() => {
     <div class="settings-container">
       <!-- User Info Section -->
       <v-card class="modern-card mb-6">
-        <v-card-title class="text-h6 font-weight-bold">User Information</v-card-title>
+        <v-card-title class="text-h6 font-weight-bold d-flex align-center justify-space-between">
+          <span>User Information</span>
+          <v-btn
+            v-if="!isEditingProfile && !isEditingName"
+            size="small"
+            variant="tonal"
+            color="primary"
+            @click="startEditingProfile"
+          >
+            <v-icon start size="16">mdi-pencil</v-icon>
+            Edit Profile
+          </v-btn>
+        </v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="6">
@@ -528,13 +618,7 @@ onMounted(() => {
                 class="modern-input"
               >
                 <template #append-inner>
-                  <v-btn
-                    v-if="userType === 'admin'"
-                    icon
-                    size="small"
-                    variant="text"
-                    @click="startEditingName"
-                  >
+                  <v-btn icon size="small" variant="text" @click="startEditingName">
                     <v-icon>mdi-pencil</v-icon>
                   </v-btn>
                 </template>
@@ -580,6 +664,91 @@ onMounted(() => {
                 class="modern-input"
               />
             </v-col>
+
+            <!-- Extended profile: view mode -->
+            <template v-if="!isEditingProfile">
+              <v-col cols="12" md="4">
+                <v-text-field
+                  :model-value="
+                    authStore.userProfile?.sex
+                      ? sexOptions.find((o) => o.value === authStore.userProfile?.sex)?.title
+                      : ''
+                  "
+                  label="Sex"
+                  readonly
+                  variant="outlined"
+                  class="modern-input"
+                  placeholder="Not set"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  :model-value="authStore.userProfile?.contactNumber || ''"
+                  label="Contact Number"
+                  readonly
+                  variant="outlined"
+                  class="modern-input"
+                  placeholder="Not set"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  :model-value="authStore.userProfile?.address || ''"
+                  label="Address"
+                  readonly
+                  variant="outlined"
+                  class="modern-input"
+                  placeholder="Not set"
+                />
+              </v-col>
+            </template>
+
+            <!-- Extended profile: edit mode -->
+            <template v-if="isEditingProfile">
+              <v-col cols="12" md="4">
+                <v-select
+                  v-model="editableProfile.sex"
+                  :items="sexOptions"
+                  item-title="title"
+                  item-value="value"
+                  label="Sex"
+                  variant="outlined"
+                  class="modern-input"
+                  clearable
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model="editableProfile.contactNumber"
+                  label="Contact Number"
+                  variant="outlined"
+                  class="modern-input"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model="editableProfile.address"
+                  label="Address"
+                  variant="outlined"
+                  class="modern-input"
+                />
+              </v-col>
+              <v-col cols="12" class="d-flex gap-2">
+                <v-btn
+                  color="primary"
+                  variant="elevated"
+                  :loading="profileLoading"
+                  class="modern-btn"
+                  @click="saveProfile"
+                >
+                  <v-icon start>mdi-check</v-icon>
+                  Save Profile
+                </v-btn>
+                <v-btn variant="text" :disabled="profileLoading" @click="cancelEditingProfile">
+                  Cancel
+                </v-btn>
+              </v-col>
+            </template>
           </v-row>
         </v-card-text>
       </v-card>

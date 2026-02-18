@@ -3,6 +3,7 @@ import { ref, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { supabase } from '../../utils/supabase'
+import CompleteProfileModal from '@/components/shared/CompleteProfileModal.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -123,6 +124,9 @@ const handleLogout = async () => {
         <router-view />
       </v-container>
     </v-main>
+
+    <!-- Profile completion modal (persists on all /user routes) -->
+    <CompleteProfileModal />
   </v-app>
 </template>
 

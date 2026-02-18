@@ -13,6 +13,7 @@ import { getStatusColor } from '@/utils/statusHelpers'
 import PageHeader from './shared/PageHeader.vue'
 import AppSnackbar from '@/components/shared/AppSnackbar.vue'
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog.vue'
+import UserDetailModal from '@/components/shared/UserDetailModal.vue'
 
 interface Props {
   userType: 'admin' | 'user'
@@ -26,6 +27,7 @@ const drawer = inject<Ref<boolean>>('drawer')
 const authStore = useAuthStore()
 const userName = computed(() => authStore.fullName)
 const userEmail = computed(() => authStore.userEmail)
+const userContactNumber = computed(() => authStore.userProfile?.contactNumber || '')
 
 // Use activities composable
 const {
@@ -174,7 +176,7 @@ const appointmentDialog = useFormDialog<{
   initialData: () => ({
     full_name: userName.value,
     email: userEmail.value,
-    contact_number: '',
+    contact_number: userContactNumber.value,
     appointment_type: '',
     date: '',
     time: '',
@@ -351,6 +353,7 @@ onMounted(async () => {
     await fetchAppointments()
   } else {
     await fetchActivities()
+    await fetchBookings()
     await fetchAppointments()
   }
   setupRealtimeSubscriptions()
@@ -467,6 +470,21 @@ const downloadAppointments = () => {
   link.click()
 }
 
+const cancelUserBooking = async (bookingId: number) => {
+  try {
+    const result = await updateBooking(bookingId, { status: 'cancelled' })
+    if (result.success) {
+      showSnackbar('Booking cancelled successfully!', 'success')
+      // Refresh activities to update user_booking_status
+      await fetchActivities()
+    } else {
+      showSnackbar(result.error || 'Failed to cancel booking', 'error')
+    }
+  } catch (err: any) {
+    showSnackbar(err.message || 'An error occurred', 'error')
+  }
+}
+
 const activityHeaders = [
   { title: 'Activity', key: 'name' },
   { title: 'Type', key: 'type' },
@@ -493,6 +511,17 @@ const appointmentHeaders = [
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
 ]
+
+// User Detail Modal
+const showUserDetail = ref(false)
+const userDetailRecord = ref<any | null>(null)
+const userDetailType = ref<'booking' | 'appointment'>('booking')
+
+const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
+  userDetailRecord.value = record
+  userDetailType.value = type
+  showUserDetail.value = true
+}
 </script>
 
 <template>
@@ -512,6 +541,7 @@ const appointmentHeaders = [
       <!-- User Tabs -->
       <v-tabs v-model="userTab" bg-color="primary" class="mb-6">
         <v-tab value="activities">Farm Activities</v-tab>
+        <v-tab value="bookings">My Bookings</v-tab>
         <v-tab value="appointments">My Appointments</v-tab>
       </v-tabs>
 
@@ -519,7 +549,7 @@ const appointmentHeaders = [
         <!-- Activities Tab -->
         <v-window-item value="activities">
           <!-- Appointment Form Button -->
-          <v-row class="mb-4">
+          <!-- <v-row class="mb-4">
             <v-col cols="12" class="d-flex justify-end">
               <v-btn
                 color="success"
@@ -530,7 +560,7 @@ const appointmentHeaders = [
                 Schedule Appointment
               </v-btn>
             </v-col>
-          </v-row>
+          </v-row> -->
 
           <!-- Loading State -->
           <v-row v-if="loading">
@@ -651,6 +681,81 @@ const appointmentHeaders = [
           </v-row>
         </v-window-item>
 
+        <!-- My Bookings Tab -->
+        <v-window-item value="bookings">
+          <!-- Loading State -->
+          <div v-if="loading" class="text-center py-12">
+            <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+            <div class="text-h6 text-grey-darken-1 mt-4">Loading bookings...</div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else-if="bookings.length === 0" class="text-center py-12">
+            <v-card class="pa-12" elevation="0" color="transparent">
+              <v-icon icon="mdi-calendar-remove" size="120" color="grey-lighten-1"></v-icon>
+              <div class="text-h5 text-grey-darken-1 mt-6">No bookings yet</div>
+              <div class="text-body-1 text-grey mt-2">
+                Your farm activity bookings will appear here
+              </div>
+            </v-card>
+          </div>
+
+          <!-- Bookings List -->
+          <v-row v-else>
+            <v-col v-for="booking in bookings" :key="booking.id" cols="12">
+              <v-card>
+                <v-card-text>
+                  <v-row align="center">
+                    <v-col cols="12" sm="4">
+                      <div class="text-subtitle-1 font-weight-bold">
+                        {{ booking.activity_name }}
+                      </div>
+                      <div class="text-caption text-grey">Booking #{{ booking.id }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="3">
+                      <div class="text-caption text-grey">Date Booked</div>
+                      <div class="text-body-2">{{ formatDate(booking.booking_date) }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="3">
+                      <v-chip
+                        :color="getStatusColor(booking.status)"
+                        size="small"
+                        variant="tonal"
+                        class="text-capitalize"
+                      >
+                        {{ booking.status }}
+                      </v-chip>
+                    </v-col>
+                    <v-col cols="12" sm="2" class="text-right">
+                      <v-btn
+                        v-if="booking.status === 'pending'"
+                        icon="mdi-close-circle"
+                        size="small"
+                        color="error"
+                        variant="text"
+                        @click="cancelUserBooking(booking.id)"
+                      >
+                        <v-icon>mdi-close-circle</v-icon>
+                        <v-tooltip activator="parent" location="top">Cancel Booking</v-tooltip>
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <div v-if="bookingsTotalPages > 1" class="d-flex justify-center mt-4">
+            <v-pagination
+              v-model="bookingsPage"
+              :length="bookingsTotalPages"
+              :total-visible="5"
+              rounded="circle"
+              @update:model-value="goToBookingsPage"
+            ></v-pagination>
+          </div>
+        </v-window-item>
+
         <!-- My Appointments Tab -->
         <v-window-item value="appointments">
           <v-row>
@@ -670,7 +775,7 @@ const appointmentHeaders = [
                       prepend-icon="mdi-calendar-check"
                       @click="appointmentDialog.openForCreate"
                     >
-                      New Appointment
+                      Schedule Appointment
                     </v-btn>
                   </div>
                 </v-card-title>
@@ -1019,6 +1124,8 @@ const appointmentHeaders = [
                     :items="bookings"
                     item-value="id"
                     hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item, 'booking')"
                   >
                     <template v-slot:item.status="{ item }">
                       <v-chip :color="getStatusColor(item.status)" size="small" variant="tonal">
@@ -1153,6 +1260,8 @@ const appointmentHeaders = [
                     :items="appointments"
                     item-value="id"
                     hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item, 'appointment')"
                   >
                     <template v-slot:item.date="{ item }">
                       <div>
@@ -1205,7 +1314,7 @@ const appointmentHeaders = [
         <v-card-text>
           <v-form @submit.prevent="appointmentDialog.submit">
             <v-row>
-              <v-col cols="12">
+              <!-- <v-col cols="12">
                 <v-text-field
                   v-model="appointmentDialog.formData.value.full_name"
                   label="Full Name"
@@ -1228,9 +1337,9 @@ const appointmentHeaders = [
                   v-model="appointmentDialog.formData.value.contact_number"
                   label="Contact Number *"
                   variant="outlined"
-                  required
+                  readonly
                 ></v-text-field>
-              </v-col>
+              </v-col> -->
 
               <v-col cols="12">
                 <v-select
@@ -1501,11 +1610,25 @@ const appointmentHeaders = [
       :color="snackbarColor"
       :timeout="3000"
     />
+
+    <!-- User Detail Modal -->
+    <UserDetailModal
+      v-model="showUserDetail"
+      :record="userDetailRecord"
+      :record-type="userDetailType"
+    />
   </div>
 </template>
 
 <style scoped>
 /* Component specific styles */
+.clickable-rows :deep(tbody tr) {
+  cursor: pointer;
+}
+
+.clickable-rows :deep(tbody tr:hover td) {
+  background: rgba(76, 175, 80, 0.06);
+}
 .activity-description {
   display: -webkit-box;
   line-clamp: 3;

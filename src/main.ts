@@ -27,10 +27,13 @@ const { initializeAuth, setupAuthListener } = useAuth()
 // Mount app immediately so public pages render without waiting for auth
 app.mount('#app')
 
-// Set up auth listener right away to handle auth changes
-setupAuthListener()
-
-// Initialize auth in background (don't block mounting)
-initializeAuth().catch((err) => {
-  console.error('Auth init failed:', err)
-})
+// Initialize auth first, then set up the listener.
+// This ensures initializeAuth is the single source of truth for the initial
+// session load and the listener won't race against it on page reload.
+initializeAuth()
+  .catch((err) => {
+    console.error('Auth init failed:', err)
+  })
+  .finally(() => {
+    setupAuthListener()
+  })
