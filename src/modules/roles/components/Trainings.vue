@@ -113,10 +113,19 @@ const { handleSearch, handleClearSearch, handleSettingsClick } = usePageActions(
         }
       }
     } else {
-      if (query) {
-        await searchTrainings(query)
+      // User view
+      if (userTab.value === 'browse') {
+        if (query) {
+          await searchTrainings(query)
+        } else {
+          await clearTrainingsSearch()
+        }
       } else {
-        await clearTrainingsSearch()
+        if (query) {
+          await searchRegistrations(query)
+        } else {
+          await clearRegistrationsSearch()
+        }
       }
     }
   },
@@ -137,6 +146,9 @@ const {
 // View filter and admin tab
 const viewFilter = ref<'in_progress' | 'completed'>('in_progress')
 const adminTab = ref('trainings')
+
+// User tab
+const userTab = ref('browse')
 
 // Topic input for training dialog
 const topicInput = ref('')
@@ -403,6 +415,7 @@ const trainingHeaders = [
   { title: 'Location', key: 'location' },
   { title: 'Start Date & Time', key: 'start_date_time' },
   { title: 'Capacity', key: 'capacity' },
+  { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
 ]
 
@@ -441,6 +454,80 @@ const isTrainingCompleted = (training: any | null) => {
     return new Date(training.end_date_time) < new Date()
   } catch (e) {
     return false
+  }
+}
+
+const getTrainingStatus = (training: any) => {
+  return isTrainingCompleted(training) ? 'Completed' : 'In Progress'
+}
+
+const getTrainingStatusColor = (training: any) => {
+  return isTrainingCompleted(training) ? 'grey' : 'success'
+}
+
+const getCapacityText = (training: any) => {
+  const confirmed = training.confirmed_count || 0
+  return `${confirmed}/${training.capacity}`
+}
+
+const getCapacityColor = (training: any) => {
+  const confirmed = training.confirmed_count || 0
+  const percentage = (confirmed / training.capacity) * 100
+  if (percentage >= 100) return 'error'
+  if (percentage >= 75) return 'warning'
+  return 'success'
+}
+
+const isTrainingFull = (training: any) => {
+  return (training.confirmed_count || 0) >= training.capacity
+}
+
+const getRegisterButtonText = (training: any) => {
+  if (isTrainingCompleted(training)) {
+    return 'Training Completed'
+  } else if (training.user_registration_status === 'confirmed') {
+    return 'Registration Confirmed'
+  } else if (training.user_registration_status === 'pending') {
+    return 'Pending Confirmation'
+  } else if (training.user_registration_status === 'cancelled') {
+    return 'Registration Cancelled'
+  } else if (isTrainingFull(training)) {
+    return 'Fully Booked'
+  }
+  return 'Register Now'
+}
+
+const getRegisterButtonColor = (training: any) => {
+  if (isTrainingCompleted(training)) {
+    return 'grey'
+  } else if (training.user_registration_status === 'confirmed') {
+    return 'success'
+  } else if (training.user_registration_status === 'pending') {
+    return 'warning'
+  } else if (training.user_registration_status === 'cancelled') {
+    return 'error'
+  } else if (isTrainingFull(training)) {
+    return 'grey'
+  }
+  return 'primary'
+}
+
+const isRegisterDisabled = (training: any) => {
+  return (
+    isTrainingCompleted(training) || !!training.user_registration_status || isTrainingFull(training)
+  )
+}
+
+const cancelUserRegistration = async (registrationId: number) => {
+  try {
+    const result = await updateRegistration(registrationId, { status: 'cancelled' })
+    if (result.success) {
+      showSnackbar('Registration cancelled successfully!', 'success')
+    } else {
+      showSnackbar(result.error || 'Failed to cancel registration', 'error')
+    }
+  } catch (err: any) {
+    showSnackbar(err.message || 'An error occurred', 'error')
   }
 }
 </script>
@@ -600,6 +687,18 @@ const isTrainingCompleted = (training: any | null) => {
                           to {{ formatDateTime(item.end_date_time) }}
                         </div>
                       </div>
+                    </template>
+
+                    <template v-slot:item.capacity="{ item }">
+                      <v-chip :color="getCapacityColor(item)" size="small" variant="tonal">
+                        {{ getCapacityText(item) }}
+                      </v-chip>
+                    </template>
+
+                    <template v-slot:item.status="{ item }">
+                      <v-chip :color="getTrainingStatusColor(item)" size="small" variant="tonal">
+                        {{ getTrainingStatus(item) }}
+                      </v-chip>
                     </template>
 
                     <template v-slot:item.actions="{ item }">
@@ -771,147 +870,258 @@ const isTrainingCompleted = (training: any | null) => {
 
     <!-- User View -->
     <template v-else>
-      <!-- Filter Buttons -->
-      <v-row class="mb-4">
-        <v-col cols="12">
-          <v-btn-toggle
-            v-model="viewFilter"
-            color="primary"
-            variant="outlined"
-            mandatory
-            style="gap: 8px"
-          >
-            <v-btn value="in_progress" style="flex: 1">In Progress</v-btn>
-            <v-btn value="completed" style="flex: 1">Completed</v-btn>
-          </v-btn-toggle>
-        </v-col>
-      </v-row>
+      <!-- User Tabs -->
+      <v-tabs v-model="userTab" bg-color="primary" class="mb-6">
+        <v-tab value="browse">Browse Trainings</v-tab>
+        <v-tab value="myRegistrations">My Registrations</v-tab>
+      </v-tabs>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="text-center py-12">
-        <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
-        <div class="text-h6 text-grey-darken-1 mt-4">Loading trainings...</div>
-      </div>
+      <v-window v-model="userTab">
+        <!-- Browse Trainings Tab -->
+        <v-window-item value="browse">
+          <!-- Filter Buttons -->
+          <v-row class="mb-4">
+            <v-col cols="12">
+              <v-btn-toggle
+                v-model="viewFilter"
+                color="primary"
+                variant="outlined"
+                mandatory
+                style="gap: 8px"
+              >
+                <v-btn value="in_progress" style="flex: 1">In Progress</v-btn>
+                <v-btn value="completed" style="flex: 1">Completed</v-btn>
+              </v-btn-toggle>
+            </v-col>
+          </v-row>
 
-      <!-- Empty State -->
-      <div v-else-if="filteredTrainings.length === 0" class="text-center py-12">
-        <v-card class="pa-12">
-          <v-icon icon="mdi-school-outline" size="120" color="grey-lighten-1"></v-icon>
-          <div class="text-h5 text-grey-darken-1 mt-6">
-            No {{ viewFilter === 'in_progress' ? 'in progress' : 'completed' }} trainings
+          <!-- Loading State -->
+          <div v-if="loading" class="text-center py-12">
+            <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+            <div class="text-h6 text-grey-darken-1 mt-4">Loading trainings...</div>
           </div>
-          <div class="text-body-1 text-grey mt-2">Check back later for new training sessions</div>
-        </v-card>
-      </div>
 
-      <!-- Training Cards -->
-      <v-row v-else>
-        <v-col v-for="training in filteredTrainings" :key="training.id" cols="12" sm="6" md="4">
-          <v-card
-            class="fill-height training-card"
-            @click="!isTrainingCompleted(training) && openRegisterDialog(training)"
-            @keydown.enter="!isTrainingCompleted(training) && openRegisterDialog(training)"
-            role="button"
-            :tabindex="isTrainingCompleted(training) ? -1 : 0"
-            :class="{ 'disabled-training': isTrainingCompleted(training) }"
-          >
-            <v-img v-if="training.image_url" :src="training.image_url" height="200" cover></v-img>
-            <div v-else class="bg-grey-lighten-3 d-flex align-center justify-center default-image">
-              <v-icon icon="mdi-school-outline" size="64" color="grey-lighten-1"></v-icon>
-            </div>
-
-            <v-card-title class="text-h6">{{ training.name }}</v-card-title>
-
-            <v-card-text>
-              <div v-if="training.description" class="text-body-2 mb-3 training-description">
-                {{ training.description }}
+          <!-- Empty State -->
+          <div v-else-if="filteredTrainings.length === 0" class="text-center py-12">
+            <v-card class="pa-12">
+              <v-icon icon="mdi-school-outline" size="120" color="grey-lighten-1"></v-icon>
+              <div class="text-h5 text-grey-darken-1 mt-6">
+                No {{ viewFilter === 'in_progress' ? 'in progress' : 'completed' }} trainings
               </div>
-
-              <div class="mb-2">
-                <v-icon icon="mdi-map-marker" size="small" class="mr-1"></v-icon>
-                <span class="text-body-2">{{ training.location }}</span>
+              <div class="text-body-1 text-grey mt-2">
+                Check back later for new training sessions
               </div>
+            </v-card>
+          </div>
 
-              <div class="mb-2">
-                <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
-                <span class="text-body-2">{{ formatDateTime(training.start_date_time) }}</span>
-              </div>
-
-              <div class="mb-3">
-                <v-icon icon="mdi-clock-outline" size="small" class="mr-1"></v-icon>
-                <span class="text-body-2">{{ formatDateTime(training.end_date_time) }}</span>
-              </div>
-
-              <div class="mb-3">
-                <v-icon icon="mdi-account-group" size="small" class="mr-1"></v-icon>
-                <span class="text-body-2">Capacity: {{ training.capacity }} participants</span>
-              </div>
-
-              <div class="mb-3">
-                <div class="text-caption text-grey mb-2">Topics Covered:</div>
-                <div class="d-flex flex-wrap gap-2">
-                  <v-chip
-                    v-for="(topic, index) in training.topics"
-                    :key="index"
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                  >
-                    {{ topic }}
-                  </v-chip>
-                </div>
-              </div>
-            </v-card-text>
-
-            <v-card-actions>
-              <template v-if="getUserRegistration(training.id)">
-                <v-chip
-                  :color="getStatusColor(getUserRegistration(training.id)!.status)"
-                  variant="flat"
-                  size="large"
-                  class="w-100 justify-center"
+          <!-- Training Cards -->
+          <v-row v-else>
+            <v-col v-for="training in filteredTrainings" :key="training.id" cols="12" sm="6" md="4">
+              <v-card
+                class="fill-height training-card"
+                @click="!isTrainingCompleted(training) && openRegisterDialog(training)"
+                @keydown.enter="!isTrainingCompleted(training) && openRegisterDialog(training)"
+                role="button"
+                :tabindex="isTrainingCompleted(training) ? -1 : 0"
+                :class="{ 'disabled-training': isTrainingCompleted(training) }"
+              >
+                <v-img
+                  v-if="training.image_url"
+                  :src="training.image_url"
+                  height="200"
+                  cover
+                ></v-img>
+                <div
+                  v-else
+                  class="bg-grey-lighten-3 d-flex align-center justify-center default-image"
                 >
-                  <v-icon
-                    :icon="
-                      getUserRegistration(training.id)!.status === 'confirmed'
-                        ? 'mdi-check-circle'
-                        : getUserRegistration(training.id)!.status === 'pending'
-                          ? 'mdi-clock-outline'
-                          : 'mdi-close-circle'
-                    "
-                    start
-                  ></v-icon>
-                  {{ getRegistrationStatusText(getUserRegistration(training.id)!.status) }}
-                </v-chip>
-              </template>
-            </v-card-actions>
-          </v-card>
-        </v-col>
-      </v-row>
+                  <v-icon icon="mdi-school-outline" size="64" color="grey-lighten-1"></v-icon>
+                </div>
 
-      <!-- Loading More Indicator -->
-      <v-row v-if="isLoadingMore && filteredTrainings.length > 0" class="mt-4">
-        <v-col cols="12" class="text-center">
-          <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
-          <p class="text-body-2 text-grey-darken-1 mt-2">Loading more trainings...</p>
-        </v-col>
-      </v-row>
+                <v-card-title class="text-h6">{{ training.name }}</v-card-title>
 
-      <!-- End of List Indicator -->
-      <v-row
-        v-if="
-          !loading &&
-          !isLoadingMore &&
-          filteredTrainings.length > 0 &&
-          trainingsPage >= trainingsTotalPages
-        "
-        class="mt-4"
-      >
-        <v-col cols="12" class="text-center">
-          <v-divider class="mb-4"></v-divider>
-          <p class="text-body-2 text-grey">You've reached the end of the list</p>
-        </v-col>
-      </v-row>
+                <v-card-text>
+                  <div v-if="training.description" class="text-body-2 mb-3 training-description">
+                    {{ training.description }}
+                  </div>
+
+                  <div class="mb-2">
+                    <v-icon icon="mdi-map-marker" size="small" class="mr-1"></v-icon>
+                    <span class="text-body-2">{{ training.location }}</span>
+                  </div>
+
+                  <div class="mb-2">
+                    <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
+                    <span class="text-body-2">{{ formatDateTime(training.start_date_time) }}</span>
+                  </div>
+
+                  <div class="mb-3">
+                    <v-icon icon="mdi-clock-outline" size="small" class="mr-1"></v-icon>
+                    <span class="text-body-2">{{ formatDateTime(training.end_date_time) }}</span>
+                  </div>
+
+                  <div class="mb-3">
+                    <v-icon icon="mdi-account-group" size="small" class="mr-1"></v-icon>
+                    <span class="text-body-2">Capacity: </span>
+                    <v-chip
+                      :color="getCapacityColor(training)"
+                      size="small"
+                      variant="tonal"
+                      class="ml-1"
+                    >
+                      {{ getCapacityText(training) }}
+                    </v-chip>
+                  </div>
+
+                  <div class="mb-3">
+                    <div class="text-caption text-grey mb-2">Topics Covered:</div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <v-chip
+                        v-for="(topic, index) in training.topics"
+                        :key="index"
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                      >
+                        {{ topic }}
+                      </v-chip>
+                    </div>
+                  </div>
+                </v-card-text>
+
+                <v-card-actions>
+                  <v-btn
+                    :color="getRegisterButtonColor(training)"
+                    :disabled="isRegisterDisabled(training)"
+                    variant="elevated"
+                    block
+                    @click.stop="openRegisterDialog(training)"
+                  >
+                    {{ getRegisterButtonText(training) }}
+                  </v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- Loading More Indicator -->
+          <v-row v-if="isLoadingMore && filteredTrainings.length > 0" class="mt-4">
+            <v-col cols="12" class="text-center">
+              <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
+              <p class="text-body-2 text-grey-darken-1 mt-2">Loading more trainings...</p>
+            </v-col>
+          </v-row>
+
+          <!-- End of List Indicator -->
+          <v-row
+            v-if="
+              !loading &&
+              !isLoadingMore &&
+              filteredTrainings.length > 0 &&
+              trainingsPage >= trainingsTotalPages
+            "
+            class="mt-4"
+          >
+            <v-col cols="12" class="text-center">
+              <v-divider class="mb-4"></v-divider>
+              <p class="text-body-2 text-grey">You've reached the end of the list</p>
+            </v-col>
+          </v-row>
+        </v-window-item>
+
+        <!-- My Registrations Tab -->
+        <v-window-item value="myRegistrations">
+          <!-- Filter Buttons -->
+          <v-row class="mb-4">
+            <v-col cols="12">
+              <v-btn-toggle
+                v-model="viewFilter"
+                color="primary"
+                variant="outlined"
+                mandatory
+                style="gap: 8px"
+              >
+                <v-btn value="in_progress" style="flex: 1">In Progress</v-btn>
+                <v-btn value="completed" style="flex: 1">Completed</v-btn>
+              </v-btn-toggle>
+            </v-col>
+          </v-row>
+
+          <!-- Loading State -->
+          <div v-if="loading" class="text-center py-12">
+            <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+            <div class="text-h6 text-grey-darken-1 mt-4">Loading registrations...</div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else-if="registrations.length === 0" class="text-center py-12">
+            <v-card class="pa-12">
+              <v-icon
+                icon="mdi-account-multiple-outline"
+                size="120"
+                color="grey-lighten-1"
+              ></v-icon>
+              <div class="text-h5 text-grey-darken-1 mt-6">No registrations yet</div>
+              <div class="text-body-1 text-grey mt-2">
+                Your training registrations will appear here
+              </div>
+            </v-card>
+          </div>
+
+          <!-- Registrations List -->
+          <v-row v-else>
+            <v-col
+              v-for="registration in registrations.filter((r) => {
+                const training = trainings.find((t) => t.id === r.training_id)
+                if (!training) return false
+                const isCompleted = isTrainingCompleted(training)
+                return viewFilter === 'in_progress' ? !isCompleted : isCompleted
+              })"
+              :key="registration.id"
+              cols="12"
+            >
+              <v-card>
+                <v-card-text>
+                  <v-row align="center">
+                    <v-col cols="12" sm="4">
+                      <div class="text-subtitle-1 font-weight-bold">
+                        {{ registration.training_name }}
+                      </div>
+                      <div class="text-caption text-grey">Registration #{{ registration.id }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="3">
+                      <div class="text-caption text-grey">Registered On</div>
+                      <div class="text-body-2">{{ formatDate(registration.created_at) }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="2">
+                      <v-chip
+                        :color="getStatusColor(registration.status)"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ registration.status.toUpperCase() }}
+                      </v-chip>
+                    </v-col>
+                    <v-col cols="12" sm="3">
+                      <v-btn
+                        v-if="registration.status === 'pending'"
+                        icon="mdi-close-circle"
+                        size="small"
+                        color="error"
+                        variant="text"
+                        @click="cancelUserRegistration(registration.id)"
+                      >
+                        <v-icon>mdi-close-circle</v-icon>
+                        <v-tooltip activator="parent" location="top">Cancel Registration</v-tooltip>
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-window-item>
+      </v-window>
     </template>
 
     <!-- Training Dialog (Admin) -->
@@ -1004,7 +1214,7 @@ const isTrainingCompleted = (training: any | null) => {
                   v-for="(topic, index) in trainingDialog.formData.value.topics"
                   :key="index"
                   closable
-                  @click:close="removeTopic(index)"
+                  @click:close="() => removeTopic(index as any)"
                 >
                   {{ topic }}
                 </v-chip>

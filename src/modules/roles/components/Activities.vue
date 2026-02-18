@@ -148,6 +148,9 @@ const { imageFile, imagePreview, handleImageSelect, removeImage } = useImageHand
 // Admin tab
 const adminTab = ref('activities')
 
+// User tab (for viewing activities and appointments)
+const userTab = ref('activities')
+
 const appointmentTypes = [
   'Farm Tour',
   'Consultation',
@@ -229,6 +232,54 @@ const confirmBooking = async () => {
   }
 }
 
+// Helper functions for booking button
+const getBookingButtonText = (activity: any) => {
+  if (activity.user_booking_status === 'confirmed') {
+    return 'Booking Confirmed'
+  } else if (activity.user_booking_status === 'pending') {
+    return 'Booking Pending'
+  } else if (activity.user_booking_status === 'cancelled') {
+    return 'Booking Cancelled'
+  } else if (isActivityFull(activity)) {
+    return 'Fully Booked'
+  }
+  return 'Book Activity'
+}
+
+const getBookingButtonColor = (activity: any) => {
+  if (activity.user_booking_status === 'confirmed') {
+    return 'success'
+  } else if (activity.user_booking_status === 'pending') {
+    return 'warning'
+  } else if (activity.user_booking_status === 'cancelled') {
+    return 'error'
+  } else if (isActivityFull(activity)) {
+    return 'grey'
+  }
+  return 'primary'
+}
+
+const isBookingDisabled = (activity: any) => {
+  return !!activity.user_booking_status || isActivityFull(activity)
+}
+
+const isActivityFull = (activity: any) => {
+  return (activity.confirmed_count || 0) >= activity.capacity
+}
+
+const getCapacityText = (activity: any) => {
+  const confirmed = activity.confirmed_count || 0
+  return `${confirmed}/${activity.capacity}`
+}
+
+const getCapacityColor = (activity: any) => {
+  const confirmed = activity.confirmed_count || 0
+  const percentage = (confirmed / activity.capacity) * 100
+  if (percentage >= 100) return 'error'
+  if (percentage >= 75) return 'warning'
+  return 'success'
+}
+
 // Use form dialog for activity management (admin)
 const activityDialog = useFormDialog<{
   name: string
@@ -236,6 +287,8 @@ const activityDialog = useFormDialog<{
   type: string
   capacity: number
   location: string
+  date: string
+  time: string
   image_url?: string | null
   id?: number
 }>({
@@ -245,10 +298,20 @@ const activityDialog = useFormDialog<{
     type: '',
     capacity: 0,
     location: '',
+    date: '',
+    time: '',
     image_url: null,
   }),
   validate: (data) => {
-    if (!data.name || !data.description || !data.type || !data.capacity || !data.location) {
+    if (
+      !data.name ||
+      !data.description ||
+      !data.type ||
+      !data.capacity ||
+      !data.location ||
+      !data.date ||
+      !data.time
+    ) {
       return { valid: false, message: 'Please fill in all required fields' }
     }
     return { valid: true }
@@ -288,6 +351,7 @@ onMounted(async () => {
     await fetchAppointments()
   } else {
     await fetchActivities()
+    await fetchAppointments()
   }
   setupRealtimeSubscriptions()
 })
@@ -315,9 +379,23 @@ const updateBookingStatus = async (
   status: 'pending' | 'confirmed' | 'cancelled',
 ) => {
   try {
+    // If confirming a booking, check if activity is full
+    if (status === 'confirmed') {
+      const booking = bookings.value.find((b) => b.id === bookingId)
+      if (booking) {
+        const activity = activities.value.find((a) => a.id === booking.activity_id)
+        if (activity && isActivityFull(activity)) {
+          showSnackbar('Cannot confirm booking - activity is at full capacity', 'error')
+          return
+        }
+      }
+    }
+
     const result = await updateBooking(bookingId, { status })
     if (result.success) {
       showSnackbar(`Booking ${status} successfully!`, 'success')
+      // Refresh activities to update confirmed count
+      await fetchActivities()
     } else {
       showSnackbar(result.error || 'Failed to update booking status', 'error')
     }
@@ -393,6 +471,7 @@ const activityHeaders = [
   { title: 'Activity', key: 'name' },
   { title: 'Type', key: 'type' },
   { title: 'Capacity', key: 'capacity' },
+  { title: 'Confirmed', key: 'confirmed_count' },
   { title: 'Location', key: 'location' },
   { title: 'Actions', key: 'actions' },
 ]
@@ -430,110 +509,260 @@ const appointmentHeaders = [
 
     <!-- User View -->
     <template v-if="userType === 'user'">
-      <!-- Appointment Form Button -->
-      <v-row class="mb-4">
-        <v-col cols="12" class="d-flex justify-end">
-          <v-btn
-            color="success"
-            variant="elevated"
-            prepend-icon="mdi-calendar-check"
-            @click="appointmentDialog.openForCreate"
-          >
-            Appointment Form
-          </v-btn>
-        </v-col>
-      </v-row>
+      <!-- User Tabs -->
+      <v-tabs v-model="userTab" bg-color="primary" class="mb-6">
+        <v-tab value="activities">Farm Activities</v-tab>
+        <v-tab value="appointments">My Appointments</v-tab>
+      </v-tabs>
 
-      <!-- Loading State -->
-      <v-row v-if="loading">
-        <v-col cols="12" class="text-center py-12">
-          <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
-          <p class="text-h6 text-grey-darken-1 mt-4">Loading activities...</p>
-        </v-col>
-      </v-row>
-
-      <!-- No Activities State -->
-      <v-row v-else-if="!loading && activities.length === 0">
-        <v-col cols="12">
-          <v-card class="text-center py-12" elevation="0" color="grey-lighten-4">
-            <v-icon icon="mdi-sprout-outline" size="100" color="grey-darken-1"></v-icon>
-            <v-card-title class="text-h5 mb-2">No Activities Available</v-card-title>
-            <v-card-text class="text-body-1 text-grey-darken-1">
-              There are currently no farm activities available for booking.
-              <br />
-              Please check back later for new activities!
-            </v-card-text>
-          </v-card>
-        </v-col>
-      </v-row>
-
-      <!-- Activities Cards -->
-      <v-row v-else>
-        <v-col v-for="activity in activities" :key="activity.id" cols="12" md="6" lg="4">
-          <v-card class="fill-height activity-card">
-            <v-img
-              :src="
-                activity.image_url ||
-                'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=400'
-              "
-              height="200"
-              cover
-            ></v-img>
-
-            <v-card-title>{{ activity.name }}</v-card-title>
-
-            <v-card-text>
-              <p class="text-body-2 mb-3 activity-description">{{ activity.description }}</p>
-
-              <div class="activity-chips">
-                <div class="chips-row">
-                  <v-chip color="primary" size="small" variant="tonal" class="mr-2">
-                    {{ activity.type }}
-                  </v-chip>
-                  <v-chip color="info" size="small" variant="tonal">
-                    <v-icon icon="mdi-map-marker" size="small" class="mr-1"></v-icon>
-                    {{ activity.location }}
-                  </v-chip>
-                </div>
-
-                <div class="text-caption text-grey-darken-1 capacity">
-                  Capacity: {{ activity.capacity }} participants
-                </div>
-              </div>
-            </v-card-text>
-
-            <v-card-actions>
-              <v-btn color="primary" variant="elevated" block @click="openBookingDialog(activity)">
-                Book Activity
+      <v-window v-model="userTab">
+        <!-- Activities Tab -->
+        <v-window-item value="activities">
+          <!-- Appointment Form Button -->
+          <v-row class="mb-4">
+            <v-col cols="12" class="d-flex justify-end">
+              <v-btn
+                color="success"
+                variant="elevated"
+                prepend-icon="mdi-calendar-check"
+                @click="appointmentDialog.openForCreate"
+              >
+                Schedule Appointment
               </v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-col>
-      </v-row>
+            </v-col>
+          </v-row>
 
-      <!-- Loading More Indicator -->
-      <v-row v-if="isLoadingMore && activities.length > 0" class="mt-4">
-        <v-col cols="12" class="text-center">
-          <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
-          <p class="text-body-2 text-grey-darken-1 mt-2">Loading more activities...</p>
-        </v-col>
-      </v-row>
+          <!-- Loading State -->
+          <v-row v-if="loading">
+            <v-col cols="12" class="text-center py-12">
+              <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+              <p class="text-h6 text-grey-darken-1 mt-4">Loading activities...</p>
+            </v-col>
+          </v-row>
 
-      <!-- End of List Indicator -->
-      <v-row
-        v-if="
-          !loading &&
-          !isLoadingMore &&
-          activities.length > 0 &&
-          activitiesPage >= activitiesTotalPages
-        "
-        class="mt-4"
-      >
-        <v-col cols="12" class="text-center">
-          <v-divider class="mb-4"></v-divider>
-          <p class="text-body-2 text-grey">You've reached the end of the list</p>
-        </v-col>
-      </v-row>
+          <!-- No Activities State -->
+          <v-row v-else-if="!loading && activities.length === 0">
+            <v-col cols="12">
+              <v-card class="text-center py-12" elevation="0" color="grey-lighten-4">
+                <v-icon icon="mdi-sprout-outline" size="100" color="grey-darken-1"></v-icon>
+                <v-card-title class="text-h5 mb-2">No Activities Available</v-card-title>
+                <v-card-text class="text-body-1 text-grey-darken-1">
+                  There are currently no farm activities available for booking.
+                  <br />
+                  Please check back later for new activities!
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- Activities Cards -->
+          <v-row v-else>
+            <v-col v-for="activity in activities" :key="activity.id" cols="12" md="6" lg="4">
+              <v-card class="fill-height activity-card">
+                <v-img
+                  :src="
+                    activity.image_url ||
+                    'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=400'
+                  "
+                  height="200"
+                  cover
+                ></v-img>
+
+                <v-card-title>{{ activity.name }}</v-card-title>
+
+                <v-card-text>
+                  <p class="text-body-2 mb-3 activity-description">{{ activity.description }}</p>
+
+                  <div class="activity-chips">
+                    <div class="chips-row mb-2">
+                      <v-chip color="primary" size="small" variant="tonal" class="mr-2">
+                        {{ activity.type }}
+                      </v-chip>
+                      <v-chip color="info" size="small" variant="tonal">
+                        <v-icon icon="mdi-map-marker" size="small" class="mr-1"></v-icon>
+                        {{ activity.location }}
+                      </v-chip>
+                    </div>
+
+                    <div class="chips-row mb-2">
+                      <v-chip color="secondary" size="small" variant="tonal" class="mr-2">
+                        <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
+                        {{ formatDate(activity.date) }}
+                      </v-chip>
+                      <v-chip color="secondary" size="small" variant="tonal">
+                        <v-icon icon="mdi-clock-outline" size="small" class="mr-1"></v-icon>
+                        {{ formatTime(activity.time) }}
+                      </v-chip>
+                    </div>
+
+                    <div class="d-flex align-center gap-2">
+                      <v-chip
+                        :color="getCapacityColor(activity)"
+                        size="small"
+                        variant="tonal"
+                        prepend-icon="mdi-account-group"
+                      >
+                        {{ getCapacityText(activity) }}
+                      </v-chip>
+                      <span class="text-caption text-grey-darken-1">
+                        {{ isActivityFull(activity) ? 'Fully Booked' : 'Available' }}
+                      </span>
+                    </div>
+                  </div>
+                </v-card-text>
+
+                <v-card-actions>
+                  <v-btn
+                    :color="getBookingButtonColor(activity)"
+                    variant="elevated"
+                    block
+                    :disabled="isBookingDisabled(activity)"
+                    @click="openBookingDialog(activity)"
+                  >
+                    {{ getBookingButtonText(activity) }}
+                  </v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- Loading More Indicator -->
+          <v-row v-if="isLoadingMore && activities.length > 0" class="mt-4">
+            <v-col cols="12" class="text-center">
+              <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
+              <p class="text-body-2 text-grey-darken-1 mt-2">Loading more activities...</p>
+            </v-col>
+          </v-row>
+
+          <!-- End of List Indicator -->
+          <v-row
+            v-if="
+              !loading &&
+              !isLoadingMore &&
+              activities.length > 0 &&
+              activitiesPage >= activitiesTotalPages
+            "
+            class="mt-4"
+          >
+            <v-col cols="12" class="text-center">
+              <v-divider class="mb-4"></v-divider>
+              <p class="text-body-2 text-grey">You've reached the end of the list</p>
+            </v-col>
+          </v-row>
+        </v-window-item>
+
+        <!-- My Appointments Tab -->
+        <v-window-item value="appointments">
+          <v-row>
+            <v-col cols="12">
+              <v-card>
+                <v-card-title class="pa-4 pa-md-6">
+                  <div class="d-flex justify-space-between align-center">
+                    <div class="d-flex align-center gap-2">
+                      <span class="text-h6">My Appointments</span>
+                      <v-chip v-if="appointmentsTotal > 0" color="primary" size="small"
+                        >{{ appointmentsTotal }} total</v-chip
+                      >
+                    </div>
+                    <v-btn
+                      color="success"
+                      variant="elevated"
+                      prepend-icon="mdi-calendar-check"
+                      @click="appointmentDialog.openForCreate"
+                    >
+                      New Appointment
+                    </v-btn>
+                  </div>
+                </v-card-title>
+                <v-card-text>
+                  <!-- Loading State -->
+                  <div v-if="loading" class="text-center py-12">
+                    <v-progress-circular
+                      indeterminate
+                      color="primary"
+                      size="64"
+                    ></v-progress-circular>
+                    <p class="text-body-1 text-grey-darken-1 mt-4">Loading appointments...</p>
+                  </div>
+
+                  <!-- No Data State -->
+                  <div v-else-if="!loading && appointments.length === 0" class="text-center py-12">
+                    <v-icon
+                      icon="mdi-calendar-clock-outline"
+                      size="80"
+                      color="grey-darken-1"
+                    ></v-icon>
+                    <p class="text-h6 text-grey-darken-1 mt-4">No appointments yet</p>
+                    <p class="text-body-2 text-grey">
+                      Click "New Appointment" to schedule your first appointment.
+                    </p>
+                  </div>
+
+                  <!-- Appointments List -->
+                  <div v-else>
+                    <v-list>
+                      <v-list-item
+                        v-for="appointment in appointments"
+                        :key="appointment.id"
+                        class="mb-2 rounded-lg"
+                        border
+                      >
+                        <template v-slot:prepend>
+                          <v-avatar :color="getStatusColor(appointment.status)" class="mr-3">
+                            <v-icon icon="mdi-calendar"></v-icon>
+                          </v-avatar>
+                        </template>
+
+                        <v-list-item-title class="font-weight-medium">
+                          {{ appointment.appointment_type }}
+                        </v-list-item-title>
+
+                        <v-list-item-subtitle>
+                          <div class="mt-1">
+                            <div>
+                              <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
+                              {{ formatDate(appointment.date) }} at
+                              {{ formatTime(appointment.time) }}
+                            </div>
+                            <div class="mt-1">
+                              <v-icon icon="mdi-phone" size="small" class="mr-1"></v-icon>
+                              {{ appointment.contact_number }}
+                            </div>
+                            <div v-if="appointment.note" class="mt-1 text-caption">
+                              {{ appointment.note }}
+                            </div>
+                          </div>
+                        </v-list-item-subtitle>
+
+                        <template v-slot:append>
+                          <v-chip
+                            :color="getStatusColor(appointment.status)"
+                            size="small"
+                            variant="tonal"
+                          >
+                            {{ appointment.status }}
+                          </v-chip>
+                        </template>
+                      </v-list-item>
+                    </v-list>
+
+                    <!-- Pagination -->
+                    <div v-if="appointmentsTotalPages > 1" class="d-flex justify-center mt-4">
+                      <v-pagination
+                        v-model="appointmentsPage"
+                        :length="appointmentsTotalPages"
+                        :total-visible="5"
+                        rounded="circle"
+                        @update:model-value="goToAppointmentsPage"
+                      ></v-pagination>
+                    </div>
+                  </div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-window-item>
+      </v-window>
     </template>
 
     <!-- Admin View -->
@@ -651,6 +880,21 @@ const appointmentHeaders = [
                             {{ item.description.substring(0, 50) }}...
                           </div>
                         </div>
+                      </div>
+                    </template>
+
+                    <template v-slot:item.confirmed_count="{ item }">
+                      <div class="d-flex align-center">
+                        <v-chip :color="getCapacityColor(item)" size="small" variant="tonal">
+                          {{ item.confirmed_count || 0 }} / {{ item.capacity }}
+                        </v-chip>
+                        <v-icon
+                          v-if="isActivityFull(item)"
+                          icon="mdi-alert-circle"
+                          color="error"
+                          size="small"
+                          class="ml-2"
+                        ></v-icon>
                       </div>
                     </template>
 
@@ -1078,11 +1322,35 @@ const appointmentHeaders = [
             </v-list-item>
             <v-list-item>
               <template v-slot:prepend>
+                <v-icon icon="mdi-calendar"></v-icon>
+              </template>
+              <v-list-item-title>{{ formatDate(selectedActivity.date) }}</v-list-item-title>
+            </v-list-item>
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon icon="mdi-clock-outline"></v-icon>
+              </template>
+              <v-list-item-title>{{ formatTime(selectedActivity.time) }}</v-list-item-title>
+            </v-list-item>
+            <v-list-item>
+              <template v-slot:prepend>
                 <v-icon icon="mdi-account-group"></v-icon>
               </template>
-              <v-list-item-title
-                >Capacity: {{ selectedActivity.capacity }} participants</v-list-item-title
-              >
+              <v-list-item-title>
+                <div class="d-flex align-center gap-2">
+                  <span>Capacity:</span>
+                  <v-chip :color="getCapacityColor(selectedActivity)" size="small" variant="tonal">
+                    {{ getCapacityText(selectedActivity) }}
+                  </v-chip>
+                  <span v-if="isActivityFull(selectedActivity)" class="text-error text-caption">
+                    (Fully Booked)
+                  </span>
+                  <span v-else class="text-success text-caption">
+                    ({{ selectedActivity.capacity - (selectedActivity.confirmed_count || 0) }} spots
+                    left)
+                  </span>
+                </div>
+              </v-list-item-title>
             </v-list-item>
           </v-list>
         </v-card-text>
@@ -1174,6 +1442,26 @@ const appointmentHeaders = [
                 <v-text-field
                   v-model="activityDialog.formData.value.location"
                   label="Location *"
+                  variant="outlined"
+                  required
+                ></v-text-field>
+              </v-col>
+
+              <v-col cols="12" md="6">
+                <v-text-field
+                  v-model="activityDialog.formData.value.date"
+                  label="Activity Date *"
+                  type="date"
+                  variant="outlined"
+                  required
+                ></v-text-field>
+              </v-col>
+
+              <v-col cols="12" md="6">
+                <v-text-field
+                  v-model="activityDialog.formData.value.time"
+                  label="Activity Time *"
+                  type="time"
                   variant="outlined"
                   required
                 ></v-text-field>

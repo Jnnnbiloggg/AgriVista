@@ -60,7 +60,8 @@ const navigationItems = [
   { title: 'Home', id: 'home' },
   { title: 'About Us', id: 'about' },
   { title: 'What We Offer', id: 'what-we-offer' },
-  { title: 'Login', id: 'login', route: '/select-user' },
+  // { title: 'Login', id: 'login', route: '/select-user' },
+  { title: 'Login', id: 'login', route: '/account?role=user' },
 ]
 </script>
 

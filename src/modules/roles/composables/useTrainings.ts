@@ -19,6 +19,8 @@ export interface Training {
   created_by: string | null
   created_at: string
   updated_at: string
+  confirmed_count?: number
+  user_registration_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
 
 export interface TrainingRegistration {
@@ -102,11 +104,42 @@ export const useTrainings = () => {
 
       if (fetchError) throw fetchError
 
+      // Fetch confirmed registration counts and user's registration status for each training
+      const trainingsWithInfo = await Promise.all(
+        (data || []).map(async (training) => {
+          // Get confirmed registrations count
+          const { count: confirmedCount } = await supabase
+            .from('training_registrations')
+            .select('*', { count: 'exact', head: true })
+            .eq('training_id', training.id)
+            .eq('status', 'confirmed')
+
+          // Get user's registration status if user is logged in and not admin
+          let userRegistrationStatus = null
+          if (!authStore.isAdmin && authStore.userId) {
+            const { data: userReg } = await supabase
+              .from('training_registrations')
+              .select('status')
+              .eq('training_id', training.id)
+              .eq('user_id', authStore.userId)
+              .maybeSingle()
+
+            userRegistrationStatus = userReg?.status || null
+          }
+
+          return {
+            ...training,
+            confirmed_count: confirmedCount || 0,
+            user_registration_status: userRegistrationStatus,
+          }
+        }),
+      )
+
       // Append or replace data based on options
       if (options?.append) {
-        trainings.value = [...trainings.value, ...(data || [])]
+        trainings.value = [...trainings.value, ...trainingsWithInfo]
       } else {
-        trainings.value = data || []
+        trainings.value = trainingsWithInfo
       }
       trainingsTotal.value = count || 0
       trainingsPage.value = page
@@ -357,6 +390,44 @@ export const useTrainings = () => {
     error.value = null
 
     try {
+      // If confirming a registration, check if training is still in progress and has capacity
+      if (updates.status === 'confirmed') {
+        // Get the registration details
+        const { data: regData, error: regError } = await supabase
+          .from('training_registrations')
+          .select('training_id')
+          .eq('id', id)
+          .single()
+
+        if (regError) throw regError
+
+        // Get the training details
+        const { data: trainingData, error: trainingError } = await supabase
+          .from('trainings')
+          .select('capacity, end_date_time')
+          .eq('id', regData.training_id)
+          .single()
+
+        if (trainingError) throw trainingError
+
+        // Check if training is still in progress
+        const isInProgress = new Date(trainingData.end_date_time) >= new Date()
+
+        if (isInProgress) {
+          // Check current confirmed count
+          const { count: confirmedCount } = await supabase
+            .from('training_registrations')
+            .select('*', { count: 'exact', head: true })
+            .eq('training_id', regData.training_id)
+            .eq('status', 'confirmed')
+
+          // Check if there's available capacity
+          if ((confirmedCount || 0) >= trainingData.capacity) {
+            throw new Error('Training is at full capacity')
+          }
+        }
+      }
+
       const { data, error: updateError } = await supabase
         .from('training_registrations')
         .update(updates)
@@ -367,6 +438,7 @@ export const useTrainings = () => {
       if (updateError) throw updateError
 
       await fetchRegistrations()
+      await fetchTrainings() // Refresh trainings to show updated confirmed count
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
@@ -457,6 +529,7 @@ export const useTrainings = () => {
         async (payload) => {
           console.log('Trainings change received!', payload)
           await fetchTrainings()
+          await fetchRegistrations()
         },
       )
       .subscribe()
@@ -470,6 +543,8 @@ export const useTrainings = () => {
         async (payload) => {
           console.log('Registrations change received!', payload)
           await fetchRegistrations()
+          // Also refresh trainings to update confirmed counts and user registration status
+          await fetchTrainings()
         },
       )
       .subscribe()

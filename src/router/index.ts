@@ -148,6 +148,32 @@ const router = createRouter({
 
 // Navigation guard
 router.beforeEach((to, from, next) => {
+  const authStore = useAuthStore()
+
+  // Redirect authenticated users away from auth pages
+  const authOnlyRoutes = ['account', 'select-user']
+  if (authOnlyRoutes.includes(to.name as string)) {
+    if (authStore.isLoading) {
+      const unwatch = authStore.$subscribe(() => {
+        if (!authStore.isLoading) {
+          unwatch()
+          if (authStore.isAuthenticated) {
+            next({ name: authStore.isAdmin ? 'admin-dashboard' : 'user-dashboard' })
+          } else {
+            next()
+          }
+        }
+      })
+    } else if (authStore.isAuthenticated) {
+      next({ name: authStore.isAdmin ? 'admin-dashboard' : 'user-dashboard' })
+      return
+    } else {
+      next()
+      return
+    }
+    return
+  }
+
   // If the route does not require auth, allow immediately.
   const requiresAuth = to.meta.requiresAuth
   if (!requiresAuth) {
@@ -156,7 +182,6 @@ router.beforeEach((to, from, next) => {
   }
 
   // For routes that require authentication, wait for auth initialization if needed
-  const authStore = useAuthStore()
 
   if (authStore.isLoading) {
     // If auth is still loading, wait for it

@@ -96,17 +96,34 @@ const deleteConfirmation = useDeleteConfirmation<{ type: 'product' | 'order'; id
 const { handleSearch, handleClearSearch, handleSettingsClick } = usePageActions({
   userType: props.userType,
   onSearch: async (query: string) => {
-    if (adminTab.value === 'products') {
-      if (query) {
-        await searchProducts(query)
+    if (props.userType === 'admin') {
+      if (adminTab.value === 'products') {
+        if (query) {
+          await searchProducts(query)
+        } else {
+          await clearProductsSearch()
+        }
       } else {
-        await clearProductsSearch()
+        if (query) {
+          await searchOrders(query)
+        } else {
+          await clearOrdersSearch()
+        }
       }
     } else {
-      if (query) {
-        await searchOrders(query)
+      // User view
+      if (userTab.value === 'products') {
+        if (query) {
+          await searchProducts(query)
+        } else {
+          await clearProductsSearch()
+        }
       } else {
-        await clearOrdersSearch()
+        if (query) {
+          await searchOrders(query)
+        } else {
+          await clearOrdersSearch()
+        }
       }
     }
   },
@@ -114,6 +131,9 @@ const { handleSearch, handleClearSearch, handleSettingsClick } = usePageActions(
 
 // Admin tab
 const adminTab = ref('products')
+
+// User tab
+const userTab = ref('products')
 
 const categories = ['Fruits', 'Vegetables', 'Herbs', 'Seeds', 'Other']
 
@@ -250,6 +270,7 @@ onMounted(async () => {
     await fetchOrders()
   } else {
     await fetchProducts()
+    await fetchOrders() // Fetch user's orders
   }
   setupRealtimeSubscriptions()
 })
@@ -298,6 +319,19 @@ const updateOrderStatus = async (
   }
 }
 
+const cancelUserOrder = async (orderId: number) => {
+  try {
+    const result = await updateOrder(orderId, { order_status: 'cancelled' })
+    if (result.success) {
+      showSnackbar('Order cancelled successfully!', 'success')
+    } else {
+      showSnackbar(result.error || 'Failed to cancel order', 'error')
+    }
+  } catch (err: any) {
+    showSnackbar(err.message || 'An error occurred', 'error')
+  }
+}
+
 const downloadSalesHistory = () => {
   const csvContent = [
     ['Product Name', 'Quantity', 'Total Price', 'Buyer', 'Date Ordered', 'Status'],
@@ -326,6 +360,20 @@ const handleReserve = (product: any) => {
   if (product.stock === 0) return
   selectedProduct.value = product
   reservationDialog.openForCreate()
+}
+
+// Helper functions for reserve button
+const getReserveButtonText = (product: any) => {
+  if (product.stock === 0) {
+    return 'Out of Stock'
+  } else if (product.user_pending_quantity && product.user_pending_quantity > 0) {
+    return `Add More (${product.user_pending_quantity} pending)`
+  }
+  return 'Reserve'
+}
+
+const isReserveDisabled = (product: any) => {
+  return product.stock === 0
 }
 
 const getStatusColor = (status: string) => {
@@ -677,98 +725,182 @@ const productHeaders = [
 
     <!-- User View: Product Cards -->
     <template v-if="userType === 'user'">
-      <!-- Loading State -->
-      <div v-if="loading" class="text-center py-12">
-        <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
-        <div class="text-h6 text-grey-darken-1 mt-4">Loading products...</div>
-      </div>
+      <!-- User Tabs -->
+      <v-tabs v-model="userTab" bg-color="primary" class="mb-6">
+        <v-tab value="products">Browse Products</v-tab>
+        <v-tab value="myOrders">My Orders</v-tab>
+      </v-tabs>
 
-      <!-- Empty State -->
-      <div v-else-if="products.length === 0" class="text-center py-12">
-        <v-card class="pa-12">
-          <v-icon
-            icon="mdi-package-variant-closed-remove"
-            size="120"
-            color="grey-lighten-1"
-          ></v-icon>
-          <div class="text-h5 text-grey-darken-1 mt-6">No products available yet</div>
-          <div class="text-body-1 text-grey mt-2">Check back later for fresh farm products</div>
-        </v-card>
-      </div>
+      <v-window v-model="userTab">
+        <!-- Products Tab -->
+        <v-window-item value="products">
+          <!-- Loading State -->
+          <div v-if="loading" class="text-center py-12">
+            <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+            <div class="text-h6 text-grey-darken-1 mt-4">Loading products...</div>
+          </div>
 
-      <!-- Products Grid -->
-      <v-row v-else>
-        <v-col v-for="product in products" :key="product.id" cols="12" sm="6" md="4" lg="3">
-          <v-card class="fill-height">
-            <v-img
-              v-if="product.images.length > 0"
-              :src="product.images[0]"
-              height="200"
-              cover
-            ></v-img>
-            <div
-              v-else
-              class="bg-grey-lighten-3 d-flex align-center justify-center"
-              style="height: 200px"
-            >
-              <v-icon icon="mdi-image-off-outline" size="64" color="grey-lighten-1"></v-icon>
-            </div>
+          <!-- Empty State -->
+          <div v-else-if="products.length === 0" class="text-center py-12">
+            <v-card class="pa-12">
+              <v-icon
+                icon="mdi-package-variant-closed-remove"
+                size="120"
+                color="grey-lighten-1"
+              ></v-icon>
+              <div class="text-h5 text-grey-darken-1 mt-6">No products available yet</div>
+              <div class="text-body-1 text-grey mt-2">Check back later for fresh farm products</div>
+            </v-card>
+          </div>
 
-            <v-card-title>{{ product.name }}</v-card-title>
-
-            <v-card-text>
-              <v-chip color="primary" size="small" variant="tonal" class="mb-3">
-                {{ product.category }}
-              </v-chip>
-
-              <div class="d-flex align-center justify-space-between">
-                <div>
-                  <div class="text-h5 font-weight-bold text-primary">₱{{ product.price }}</div>
+          <!-- Products Grid -->
+          <v-row v-else>
+            <v-col v-for="product in products" :key="product.id" cols="12" sm="6" md="4" lg="3">
+              <v-card class="fill-height">
+                <v-img
+                  v-if="product.images.length > 0"
+                  :src="product.images[0]"
+                  height="200"
+                  cover
+                ></v-img>
+                <div
+                  v-else
+                  class="bg-grey-lighten-3 d-flex align-center justify-center"
+                  style="height: 200px"
+                >
+                  <v-icon icon="mdi-image-off-outline" size="64" color="grey-lighten-1"></v-icon>
                 </div>
-                <div class="text-caption">
-                  Stock:
-                  <span :class="product.stock === 0 ? 'text-error' : 'text-success'">{{
-                    product.stock
-                  }}</span>
-                </div>
-              </div>
-            </v-card-text>
 
-            <v-card-actions>
-              <v-btn
-                :disabled="product.stock === 0"
-                color="primary"
-                variant="elevated"
-                block
-                @click="handleReserve(product)"
-              >
-                {{ product.stock === 0 ? 'Out of Stock' : 'Reserve' }}
-              </v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-col>
-      </v-row>
+                <v-card-title>{{ product.name }}</v-card-title>
 
-      <!-- Loading More Indicator -->
-      <v-row v-if="isLoadingMore && products.length > 0" class="mt-4">
-        <v-col cols="12" class="text-center">
-          <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
-          <p class="text-body-2 text-grey-darken-1 mt-2">Loading more products...</p>
-        </v-col>
-      </v-row>
+                <v-card-text>
+                  <v-chip color="primary" size="small" variant="tonal" class="mb-3">
+                    {{ product.category }}
+                  </v-chip>
 
-      <!-- End of List Indicator -->
-      <v-row
-        v-if="
-          !loading && !isLoadingMore && products.length > 0 && productsPage >= productsTotalPages
-        "
-        class="mt-4"
-      >
-        <v-col cols="12" class="text-center">
-          <v-divider class="mb-4"></v-divider>
-          <p class="text-body-2 text-grey">You've reached the end of the list</p>
-        </v-col>
-      </v-row>
+                  <div class="d-flex align-center justify-space-between">
+                    <div>
+                      <div class="text-h5 font-weight-bold text-primary">₱{{ product.price }}</div>
+                    </div>
+                    <div class="text-caption">
+                      Stock:
+                      <span :class="product.stock === 0 ? 'text-error' : 'text-success'">{{
+                        product.stock
+                      }}</span>
+                    </div>
+                  </div>
+                </v-card-text>
+
+                <v-card-actions>
+                  <v-btn
+                    :disabled="isReserveDisabled(product)"
+                    color="primary"
+                    variant="elevated"
+                    block
+                    @click="handleReserve(product)"
+                  >
+                    {{ getReserveButtonText(product) }}
+                  </v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- Loading More Indicator -->
+          <v-row v-if="isLoadingMore && products.length > 0" class="mt-4">
+            <v-col cols="12" class="text-center">
+              <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
+              <p class="text-body-2 text-grey-darken-1 mt-2">Loading more products...</p>
+            </v-col>
+          </v-row>
+
+          <!-- End of List Indicator -->
+          <v-row
+            v-if="
+              !loading &&
+              !isLoadingMore &&
+              products.length > 0 &&
+              productsPage >= productsTotalPages
+            "
+            class="mt-4"
+          >
+            <v-col cols="12" class="text-center">
+              <v-divider class="mb-4"></v-divider>
+              <p class="text-body-2 text-grey">You've reached the end of the list</p>
+            </v-col>
+          </v-row>
+        </v-window-item>
+
+        <!-- My Orders Tab -->
+        <v-window-item value="myOrders">
+          <!-- Loading State -->
+          <div v-if="loading" class="text-center py-12">
+            <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+            <div class="text-h6 text-grey-darken-1 mt-4">Loading orders...</div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else-if="orders.length === 0" class="text-center py-12">
+            <v-card class="pa-12">
+              <v-icon icon="mdi-cart-off" size="120" color="grey-lighten-1"></v-icon>
+              <div class="text-h5 text-grey-darken-1 mt-6">No orders yet</div>
+              <div class="text-body-1 text-grey mt-2">Your reservations will appear here</div>
+            </v-card>
+          </div>
+
+          <!-- Orders List -->
+          <v-row v-else>
+            <v-col v-for="order in orders" :key="order.id" cols="12">
+              <v-card>
+                <v-card-text>
+                  <v-row align="center">
+                    <v-col cols="12" sm="3">
+                      <div class="text-subtitle-1 font-weight-bold">{{ order.product_name }}</div>
+                      <div class="text-caption text-grey">Order #{{ order.id }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="2">
+                      <div class="text-caption text-grey">Quantity</div>
+                      <div class="text-body-1">{{ order.quantity }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="2">
+                      <div class="text-caption text-grey">Total Price</div>
+                      <div class="text-body-1 font-weight-bold text-primary">
+                        ₱{{ order.total_price }}
+                      </div>
+                    </v-col>
+                    <v-col cols="12" sm="2">
+                      <div class="text-caption text-grey">Date Ordered</div>
+                      <div class="text-body-2">{{ formatDate(order.created_at) }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="2">
+                      <v-chip
+                        :color="getStatusColor(order.order_status)"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ order.order_status.toUpperCase() }}
+                      </v-chip>
+                    </v-col>
+                    <v-col cols="12" sm="1">
+                      <v-btn
+                        v-if="order.order_status === 'pending'"
+                        icon="mdi-close-circle"
+                        size="small"
+                        color="error"
+                        variant="text"
+                        @click="cancelUserOrder(order.id)"
+                      >
+                        <v-icon>mdi-close-circle</v-icon>
+                        <v-tooltip activator="parent" location="top">Cancel Order</v-tooltip>
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-window-item>
+      </v-window>
     </template>
 
     <!-- Admin Product Dialog -->

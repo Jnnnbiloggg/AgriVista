@@ -50,7 +50,7 @@ export function useAuth() {
   /**
    * Sign in with email and password
    */
-  async function signIn(email: string, password: string) {
+  async function signIn(email: string, password: string, selectedRole?: 'admin' | 'user') {
     loading.value = true
     error.value = null
 
@@ -63,20 +63,34 @@ export function useAuth() {
       if (signInError) throw signInError
 
       if (data.session && data.user) {
+        // Determine user type based on email
+        const actualUserType = authStore.determineUserType(data.user.email || '')
+
+        // Validate if selected role matches actual user type
+        if (selectedRole && selectedRole !== actualUserType) {
+          error.value =
+            actualUserType === 'admin'
+              ? 'This email is registered as an admin. Please use the admin login.'
+              : 'This email is not registered as an admin. Please use the user login.'
+
+          // Sign out to prevent session creation
+          await supabase.auth.signOut()
+          authStore.clearAuth()
+
+          return { success: false, error: error.value }
+        }
+
         authStore.setSession(data.session)
         authStore.setUser(data.user)
-
-        // Determine user type
-        const userType = authStore.determineUserType(data.user.email || '')
         authStore.setUserProfile({
           id: data.user.id,
           email: data.user.email || '',
           fullName: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'User',
-          userType,
+          userType: actualUserType,
         })
 
         // Redirect based on user type
-        if (userType === 'admin') {
+        if (actualUserType === 'admin') {
           await router.push('/admin/dashboard')
         } else {
           await router.push('/user/dashboard')

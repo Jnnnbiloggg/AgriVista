@@ -14,9 +14,13 @@ export interface Activity {
   type: string
   capacity: number
   location: string
+  date: string
+  time: string
   created_by: string | null
   created_at: string
   updated_at: string
+  confirmed_count?: number
+  user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
 
 export interface Booking {
@@ -121,11 +125,42 @@ export const useActivities = () => {
 
       if (fetchError) throw fetchError
 
+      // Fetch confirmed bookings count and user's booking status for each activity
+      const activitiesWithBookingInfo = await Promise.all(
+        (data || []).map(async (activity) => {
+          // Get confirmed bookings count
+          const { count: confirmedCount } = await supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: true })
+            .eq('activity_id', activity.id)
+            .eq('status', 'confirmed')
+
+          // Get user's booking status if not admin
+          let userBookingStatus = null
+          if (!authStore.isAdmin) {
+            const { data: userBooking } = await supabase
+              .from('bookings')
+              .select('status')
+              .eq('activity_id', activity.id)
+              .eq('user_id', authStore.userId)
+              .maybeSingle()
+
+            userBookingStatus = userBooking?.status || null
+          }
+
+          return {
+            ...activity,
+            confirmed_count: confirmedCount || 0,
+            user_booking_status: userBookingStatus,
+          }
+        }),
+      )
+
       // Append or replace data based on options
       if (options?.append) {
-        activities.value = [...activities.value, ...(data || [])]
+        activities.value = [...activities.value, ...activitiesWithBookingInfo]
       } else {
-        activities.value = data || []
+        activities.value = activitiesWithBookingInfo
       }
       activitiesTotal.value = count || 0
     } catch (err: any) {
@@ -623,6 +658,8 @@ export const useActivities = () => {
         async (payload) => {
           console.log('Bookings change received:', payload)
           await fetchBookings()
+          // Also refresh activities to update confirmed counts and booking statuses
+          await fetchActivities()
         },
       )
       .subscribe()

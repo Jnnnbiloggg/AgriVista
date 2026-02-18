@@ -109,8 +109,12 @@ const handleSubmit = async () => {
       errorMessage.value = authError.value || 'Registration failed. Please try again.'
     }
   } else {
-    // Login
-    const result = await signIn(form.value.email, form.value.password)
+    // Login - pass the selected role for validation
+    const result = await signIn(
+      form.value.email,
+      form.value.password,
+      selectedRole.value as 'admin' | 'user',
+    )
 
     if (!result?.success) {
       errorMessage.value = authError.value || 'Invalid email or password'

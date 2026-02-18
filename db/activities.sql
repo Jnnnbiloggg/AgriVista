@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS activities (
   type TEXT NOT NULL,
   capacity INTEGER NOT NULL,
   location TEXT NOT NULL,
+  date DATE NOT NULL,
+  time TIME NOT NULL,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -175,6 +177,7 @@ CREATE POLICY "Users can delete own appointments, admins delete all"
 -- Activities indexes
 CREATE INDEX IF NOT EXISTS activities_created_at_idx ON activities(created_at DESC);
 CREATE INDEX IF NOT EXISTS activities_type_idx ON activities(type);
+CREATE INDEX IF NOT EXISTS activities_date_idx ON activities(date);
 CREATE INDEX IF NOT EXISTS activities_name_idx ON activities USING gin(to_tsvector('english', name));
 CREATE INDEX IF NOT EXISTS activities_description_idx ON activities USING gin(to_tsvector('english', description));
 CREATE INDEX IF NOT EXISTS activities_created_by_idx ON activities(created_by);

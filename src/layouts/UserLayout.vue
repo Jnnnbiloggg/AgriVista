@@ -2,6 +2,7 @@
 import { ref, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { supabase } from '../../utils/supabase'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -49,7 +50,9 @@ const userNavigationItems = [
   },
 ]
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  await supabase.auth.signOut()
+  authStore.clearAuth()
   router.push('/')
 }
 </script>

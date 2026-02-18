@@ -17,6 +17,7 @@ export interface Product {
   created_by: string | null
   created_at: string
   updated_at: string
+  user_pending_quantity?: number
 }
 
 export interface Order {
@@ -99,11 +100,34 @@ export const useProducts = () => {
 
       if (fetchError) throw fetchError
 
+      // For users, add pending order quantity info for each product
+      let productsWithOrderInfo = data || []
+      if (!authStore.isAdmin && authStore.userId) {
+        productsWithOrderInfo = await Promise.all(
+          (data || []).map(async (product) => {
+            // Get user's pending orders for this product
+            const { data: userOrders } = await supabase
+              .from('orders')
+              .select('quantity, order_status')
+              .eq('product_id', product.id)
+              .eq('user_id', authStore.userId)
+              .eq('order_status', 'pending')
+
+            const pendingQuantity = userOrders?.reduce((sum, order) => sum + order.quantity, 0) || 0
+
+            return {
+              ...product,
+              user_pending_quantity: pendingQuantity,
+            }
+          }),
+        )
+      }
+
       // Append or replace data based on options
       if (options?.append) {
-        products.value = [...products.value, ...(data || [])]
+        products.value = [...products.value, ...productsWithOrderInfo]
       } else {
-        products.value = data || []
+        products.value = productsWithOrderInfo
       }
       productsTotal.value = count || 0
     } catch (err: any) {
@@ -335,6 +359,19 @@ export const useProducts = () => {
     error.value = null
 
     try {
+      // Check current stock before creating order
+      const { data: productData, error: productError } = await supabase
+        .from('products')
+        .select('stock')
+        .eq('id', order.product_id)
+        .single()
+
+      if (productError) throw productError
+
+      if (productData.stock <= 0) {
+        throw new Error('This product is out of stock')
+      }
+
       const { data, error: createError } = await supabase
         .from('orders')
         .insert([
@@ -350,16 +387,7 @@ export const useProducts = () => {
 
       if (createError) throw createError
 
-      // Update product stock
-      const { error: updateError } = await supabase.rpc('decrement_product_stock', {
-        product_id: order.product_id,
-        quantity: order.quantity,
-      })
-
-      if (updateError) {
-        console.warn('Could not update product stock:', updateError)
-      }
-
+      // Note: Stock is NOT decremented on order creation, only when admin confirms
       await fetchOrders()
       await fetchProducts() // Refresh products to show updated stock
       return { success: true, data }
@@ -377,6 +405,40 @@ export const useProducts = () => {
     error.value = null
 
     try {
+      // If completing an order, check stock and decrement
+      if (updates.order_status === 'completed') {
+        // Get the order details
+        const { data: orderData, error: orderError } = await supabase
+          .from('orders')
+          .select('product_id, quantity')
+          .eq('id', id)
+          .single()
+
+        if (orderError) throw orderError
+
+        // Get current product stock
+        const { data: productData, error: productError } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', orderData.product_id)
+          .single()
+
+        if (productError) throw productError
+
+        // Check if there's enough stock
+        if (productData.stock < orderData.quantity) {
+          throw new Error('Insufficient stock to complete this order')
+        }
+
+        // Decrement stock
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ stock: productData.stock - orderData.quantity })
+          .eq('id', orderData.product_id)
+
+        if (stockError) throw stockError
+      }
+
       const { data, error: updateError } = await supabase
         .from('orders')
         .update(updates)
@@ -387,6 +449,7 @@ export const useProducts = () => {
       if (updateError) throw updateError
 
       await fetchOrders()
+      await fetchProducts() // Refresh products to show updated stock
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
