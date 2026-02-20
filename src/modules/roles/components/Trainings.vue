@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useTrainings } from '../composables/useTrainings'
+import { useTrainings } from '@/modules/roles/composables/useTrainings'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import HeaderActions from './shared/HeaderActions.vue'
 import AppSnackbar from '@/components/shared/AppSnackbar.vue'

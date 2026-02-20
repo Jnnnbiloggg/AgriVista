@@ -1,58 +1,39 @@
-// src/modules/roles/composables/useActivities.ts
+// src/modules/roles/composables/useTrainings.ts
 
 import { ref, computed, onUnmounted } from 'vue'
 
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useAuthStore } from '@/stores/auth'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from '../../../../utils/supabase'
 
-export interface Activity {
+export interface Training {
   id: number
   name: string
-  description: string
-  image_url: string | null
-  type: string
-  capacity: number
+  description: string | null
   location: string
-  duration?: string | null
-  date: string
-  time: string
+  start_date_time: string
+  end_date_time: string
+  topics: string[]
+  capacity: number
+  image_url: string | null
   created_by: string | null
   created_at: string
   updated_at: string
-  archived_at: string | null
+  archived_at?: string | null
   confirmed_count?: number
-  user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
+  user_registration_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
 
-export interface Booking {
+export interface TrainingRegistration {
   id: number
-  activity_id: number
-  activity_name: string
+  training_id: number
+  training_name: string
   user_id: string
   user_name: string
   user_email: string
-  booking_date: string
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
-  activities?: { date: string; time: string } | null
-}
-
-export interface Appointment {
-  id: number
-  user_id: string
-  full_name: string
-  email: string
-  contact_number: string
-  appointment_type: string
-  date: string
-  time: string
-  note: string | null
-  status: 'pending' | 'confirmed' | 'cancelled'
-  created_at: string
-  updated_at: string
-  archived_at: string | null
 }
 
 export interface PaginationOptions {
@@ -62,172 +43,172 @@ export interface PaginationOptions {
   sortOrder?: 'asc' | 'desc'
 }
 
-export const useActivities = () => {
+function useTrainings() {
   const authStore = useAuthStore()
 
   // State
-  const activities = ref<Activity[]>([])
-  const bookings = ref<Booking[]>([])
-  const appointments = ref<Appointment[]>([])
+  const trainings = ref<Training[]>([])
+  const registrations = ref<TrainingRegistration[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   // Pagination state
-  const activitiesTotal = ref(0)
-  const bookingsTotal = ref(0)
-  const appointmentsTotal = ref(0)
+  const trainingsTotal = ref(0)
+  const registrationsTotal = ref(0)
 
-  const activitiesPage = ref(1)
-  const bookingsPage = ref(1)
-  const appointmentsPage = ref(1)
+  const trainingsPage = ref(1)
+  const registrationsPage = ref(1)
 
   const itemsPerPage = ref(10)
-  const activitiesSearchQuery = ref('')
-  const bookingsSearchQuery = ref('')
-  const appointmentsSearchQuery = ref('')
+  const trainingsSearchQuery = ref('')
+  const registrationsSearchQuery = ref('')
 
-  const showArchivedActivities = ref(false)
-  const showArchivedAppointments = ref(false)
+  const showArchivedTrainings = ref(false)
 
-  let activitiesChannel: RealtimeChannel | null = null
-  let bookingsChannel: RealtimeChannel | null = null
-  let appointmentsChannel: RealtimeChannel | null = null
+  let trainingsChannel: RealtimeChannel | null = null
+  let registrationsChannel: RealtimeChannel | null = null
 
   // Computed pagination info
-  const activitiesTotalPages = computed(() => Math.ceil(activitiesTotal.value / itemsPerPage.value))
-  const bookingsTotalPages = computed(() => Math.ceil(bookingsTotal.value / itemsPerPage.value))
-  const appointmentsTotalPages = computed(() =>
-    Math.ceil(appointmentsTotal.value / itemsPerPage.value),
+  const trainingsTotalPages = computed(() => Math.ceil(trainingsTotal.value / itemsPerPage.value))
+  const registrationsTotalPages = computed(() =>
+    Math.ceil(registrationsTotal.value / itemsPerPage.value),
   )
 
   // ============================================
-  // ACTIVITIES
+  // TRAININGS
   // ============================================
 
-  const fetchActivities = async (options?: Partial<PaginationOptions> & { append?: boolean }) => {
+  const fetchTrainings = async (options?: Partial<PaginationOptions> & { append?: boolean }) => {
     loading.value = true
     error.value = null
 
-    if (options?.page) activitiesPage.value = options.page
-    if (options?.itemsPerPage) itemsPerPage.value = options.itemsPerPage
-
     try {
-      const from = (activitiesPage.value - 1) * itemsPerPage.value
-      const to = from + itemsPerPage.value - 1
+      const page = options?.page || trainingsPage.value
+      const limit = options?.itemsPerPage || itemsPerPage.value
+      const sortBy = options?.sortBy || 'start_date_time'
+      const sortOrder = options?.sortOrder || 'desc'
 
-      let query = supabase
-        .from('activities')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to)
+      const from = (page - 1) * limit
+      const to = from + limit - 1
 
+      let query = supabase.from('trainings').select('*', { count: 'exact' })
+
+      // Handle visibility and archiving based on role
       const now = new Date().toISOString()
+
       if (authStore.isAdmin) {
-        if (showArchivedActivities.value) {
+        if (showArchivedTrainings.value) {
           query = query.lte('archived_at', now)
         } else {
           query = query.or(`archived_at.gt.${now},archived_at.is.null`)
         }
       } else {
-        // Users should only see unarchived activities
+        // For regular users, only show unarchived items
         query = query.or(`archived_at.gt.${now},archived_at.is.null`)
       }
 
-      // Search functionality
-      if (activitiesSearchQuery.value) {
+      // Apply search filter if exists
+      if (trainingsSearchQuery.value) {
         query = query.or(
-          `name.ilike.%${activitiesSearchQuery.value}%,description.ilike.%${activitiesSearchQuery.value}%,type.ilike.%${activitiesSearchQuery.value}%`,
+          `name.ilike.%${trainingsSearchQuery.value}%,description.ilike.%${trainingsSearchQuery.value}%`,
         )
       }
+
+      // Apply sorting and pagination
+      query = query.order(sortBy, { ascending: sortOrder === 'asc' }).range(from, to)
 
       const { data, error: fetchError, count } = await query
 
       if (fetchError) throw fetchError
 
-      // Fetch confirmed bookings count and user's booking status for each activity
-      const activitiesWithBookingInfo = await Promise.all(
-        (data || []).map(async (activity) => {
-          // Get confirmed bookings count
+      // Fetch confirmed registration counts and user's registration status for each training
+      const trainingsWithInfo = await Promise.all(
+        (data || []).map(async (training) => {
+          // Get confirmed registrations count
           const { count: confirmedCount } = await supabase
-            .from('bookings')
+            .from('training_registrations')
             .select('*', { count: 'exact', head: true })
-            .eq('activity_id', activity.id)
+            .eq('training_id', training.id)
             .eq('status', 'confirmed')
 
-          // Get user's booking status if not admin
-          let userBookingStatus = null
-          if (!authStore.isAdmin) {
-            const { data: userBooking } = await supabase
-              .from('bookings')
+          // Get user's registration status if user is logged in and not admin
+          let userRegistrationStatus = null
+          if (!authStore.isAdmin && authStore.userId) {
+            const { data: userReg } = await supabase
+              .from('training_registrations')
               .select('status')
-              .eq('activity_id', activity.id)
+              .eq('training_id', training.id)
               .eq('user_id', authStore.userId)
               .maybeSingle()
 
-            userBookingStatus = userBooking?.status || null
+            userRegistrationStatus = userReg?.status || null
           }
 
           return {
-            ...activity,
+            ...training,
             confirmed_count: confirmedCount || 0,
-            user_booking_status: userBookingStatus,
+            user_registration_status: userRegistrationStatus,
           }
         }),
       )
 
       // Append or replace data based on options
       if (options?.append) {
-        activities.value = [...activities.value, ...activitiesWithBookingInfo]
+        trainings.value = [...trainings.value, ...trainingsWithInfo]
       } else {
-        activities.value = activitiesWithBookingInfo
+        trainings.value = trainingsWithInfo
       }
-      activitiesTotal.value = count || 0
+      trainingsTotal.value = count || 0
+      trainingsPage.value = page
+
+      return { success: true, data: trainings.value }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error fetching activities:', err)
+      console.error('Error fetching trainings:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const loadMoreActivities = async () => {
-    if (activitiesPage.value < activitiesTotalPages.value) {
-      activitiesPage.value += 1
-      await fetchActivities({ append: true })
+  const loadMoreTrainings = async () => {
+    if (trainingsPage.value < trainingsTotalPages.value) {
+      trainingsPage.value += 1
+      await fetchTrainings({ append: true })
     }
   }
 
-  const searchActivities = async (query: string) => {
-    activitiesSearchQuery.value = query
-    activitiesPage.value = 1
-    await fetchActivities()
+  const searchTrainings = async (query: string) => {
+    trainingsSearchQuery.value = query
+    trainingsPage.value = 1
+    await fetchTrainings()
   }
 
-  const clearActivitiesSearch = async () => {
-    activitiesSearchQuery.value = ''
-    activitiesPage.value = 1
-    await fetchActivities()
+  const clearTrainingsSearch = async () => {
+    trainingsSearchQuery.value = ''
+    await fetchTrainings()
   }
 
-  const createActivity = async (
-    activity: Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at'>,
+  const createTraining = async (
+    training: Omit<Training, 'id' | 'created_at' | 'updated_at' | 'created_by'>,
     imageFile: File | null = null,
   ) => {
     loading.value = true
     error.value = null
 
     try {
-      let imageUrl = activity.image_url
+      let imageUrl = training.image_url
 
+      // Upload image if provided
       if (imageFile) {
         imageUrl = await uploadImage(imageFile)
       }
 
-      const { data, error: createError } = await supabase
-        .from('activities')
+      const { data, error: insertError } = await supabase
+        .from('trainings')
         .insert([
           {
-            ...activity,
+            ...training,
             image_url: imageUrl,
             created_by: authStore.userId,
           },
@@ -235,24 +216,22 @@ export const useActivities = () => {
         .select()
         .single()
 
-      if (createError) throw createError
+      if (insertError) throw insertError
 
-      await fetchActivities()
+      await fetchTrainings()
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error creating activity:', err)
-      return { success: false, error: error.value }
+      console.error('Error creating training:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const updateActivity = async (
+  const updateTraining = async (
     id: number,
-    updates: Partial<
-      Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at'>
-    >,
+    updates: Partial<Omit<Training, 'id' | 'created_at' | 'updated_at' | 'created_by'>>,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -261,16 +240,19 @@ export const useActivities = () => {
     try {
       let imageUrl = updates.image_url
 
+      // Upload new image if provided
       if (imageFile) {
         // Delete old image if exists
-        if (updates.image_url) {
-          await deleteImage(updates.image_url)
+        const training = trainings.value.find((t) => t.id === id)
+        if (training?.image_url) {
+          await deleteImage(training.image_url)
         }
+
         imageUrl = await uploadImage(imageFile)
       }
 
       const { data, error: updateError } = await supabase
-        .from('activities')
+        .from('trainings')
         .update({
           ...updates,
           image_url: imageUrl,
@@ -281,111 +263,109 @@ export const useActivities = () => {
 
       if (updateError) throw updateError
 
-      await fetchActivities()
+      await fetchTrainings()
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error updating activity:', err)
-      return { success: false, error: error.value }
+      console.error('Error updating training:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const deleteActivity = async (id: number) => {
+  const deleteTraining = async (id: number) => {
     loading.value = true
     error.value = null
 
     try {
-      // Get activity to delete image
-      const { data: activity } = await supabase
-        .from('activities')
-        .select('image_url')
-        .eq('id', id)
-        .single()
-
-      // Delete image if exists
-      if (activity?.image_url) {
-        await deleteImage(activity.image_url)
+      // Get training to delete its image
+      const training = trainings.value.find((t) => t.id === id)
+      if (training?.image_url) {
+        await deleteImage(training.image_url)
       }
 
-      const { error: deleteError } = await supabase.from('activities').delete().eq('id', id)
+      const { error: deleteError } = await supabase.from('trainings').delete().eq('id', id)
 
       if (deleteError) throw deleteError
 
-      await fetchActivities()
+      await fetchTrainings()
       return { success: true }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error deleting activity:', err)
-      return { success: false, error: error.value }
+      console.error('Error deleting training:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
   // ============================================
-  // BOOKINGS
+  // TRAINING REGISTRATIONS
   // ============================================
 
-  const fetchBookings = async (options?: Partial<PaginationOptions>) => {
+  const fetchRegistrations = async (options?: Partial<PaginationOptions>) => {
     loading.value = true
     error.value = null
 
-    if (options?.page) bookingsPage.value = options.page
-    if (options?.itemsPerPage) itemsPerPage.value = options.itemsPerPage
-
     try {
-      const from = (bookingsPage.value - 1) * itemsPerPage.value
-      const to = from + itemsPerPage.value - 1
+      const page = options?.page || registrationsPage.value
+      const limit = options?.itemsPerPage || itemsPerPage.value
+      const sortBy = options?.sortBy || 'created_at'
+      const sortOrder = options?.sortOrder || 'desc'
 
-      let query = supabase
-        .from('bookings')
-        .select('*, activities(date, time)', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to)
+      const from = (page - 1) * limit
+      const to = from + limit - 1
 
-      // If user is not admin, only show their bookings
+      let query = supabase.from('training_registrations').select('*', { count: 'exact' })
+
+      // If user is not admin, only show their registrations
       if (!authStore.isAdmin) {
         query = query.eq('user_id', authStore.userId)
       }
 
-      // Search functionality
-      if (bookingsSearchQuery.value) {
+      // Apply search filter if exists
+      if (registrationsSearchQuery.value) {
         query = query.or(
-          `activity_name.ilike.%${bookingsSearchQuery.value}%,user_name.ilike.%${bookingsSearchQuery.value}%,user_email.ilike.%${bookingsSearchQuery.value}%`,
+          `training_name.ilike.%${registrationsSearchQuery.value}%,user_name.ilike.%${registrationsSearchQuery.value}%`,
         )
       }
+
+      // Apply sorting and pagination
+      query = query.order(sortBy, { ascending: sortOrder === 'asc' }).range(from, to)
 
       const { data, error: fetchError, count } = await query
 
       if (fetchError) throw fetchError
 
-      bookings.value = data || []
-      bookingsTotal.value = count || 0
+      registrations.value = data || []
+      registrationsTotal.value = count || 0
+      registrationsPage.value = page
+
+      return { success: true, data: registrations.value }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error fetching bookings:', err)
+      console.error('Error fetching registrations:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const searchBookings = async (query: string) => {
-    bookingsSearchQuery.value = query
-    bookingsPage.value = 1
-    await fetchBookings()
+  const searchRegistrations = async (query: string) => {
+    registrationsSearchQuery.value = query
+    registrationsPage.value = 1
+    await fetchRegistrations()
   }
 
-  const clearBookingsSearch = async () => {
-    bookingsSearchQuery.value = ''
-    bookingsPage.value = 1
-    await fetchBookings()
+  const clearRegistrationsSearch = async () => {
+    registrationsSearchQuery.value = ''
+    await fetchRegistrations()
   }
 
-  const createBooking = async (
-    booking: Omit<
-      Booking,
+  const createRegistration = async (
+    registration: Omit<
+      TrainingRegistration,
       'id' | 'created_at' | 'updated_at' | 'user_id' | 'user_name' | 'user_email'
     >,
   ) => {
@@ -393,11 +373,11 @@ export const useActivities = () => {
     error.value = null
 
     try {
-      const { data, error: createError } = await supabase
-        .from('bookings')
+      const { data, error: insertError } = await supabase
+        .from('training_registrations')
         .insert([
           {
-            ...booking,
+            ...registration,
             user_id: authStore.userId,
             user_name: authStore.fullName,
             user_email: authStore.userEmail,
@@ -406,168 +386,67 @@ export const useActivities = () => {
         .select()
         .single()
 
-      if (createError) throw createError
+      if (insertError) throw insertError
 
-      await fetchBookings()
+      await fetchRegistrations()
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error creating booking:', err)
-      return { success: false, error: error.value }
+      console.error('Error creating registration:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const updateBooking = async (id: number, updates: Partial<Booking>) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      const { data, error: updateError } = await supabase
-        .from('bookings')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (updateError) throw updateError
-
-      await fetchBookings()
-      return { success: true, data }
-    } catch (err: any) {
-      error.value = err.message
-      console.error('Error updating booking:', err)
-      return { success: false, error: error.value }
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const deleteBooking = async (id: number) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      const { error: deleteError } = await supabase.from('bookings').delete().eq('id', id)
-
-      if (deleteError) throw deleteError
-
-      await fetchBookings()
-      return { success: true }
-    } catch (err: any) {
-      error.value = err.message
-      console.error('Error deleting booking:', err)
-      return { success: false, error: error.value }
-    } finally {
-      loading.value = false
-    }
-  }
-
-  // ============================================
-  // APPOINTMENTS
-  // ============================================
-
-  const fetchAppointments = async (options?: Partial<PaginationOptions>) => {
-    loading.value = true
-    error.value = null
-
-    if (options?.page) appointmentsPage.value = options.page
-    if (options?.itemsPerPage) itemsPerPage.value = options.itemsPerPage
-
-    try {
-      const from = (appointmentsPage.value - 1) * itemsPerPage.value
-      const to = from + itemsPerPage.value - 1
-
-      let query = supabase
-        .from('appointments')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to)
-
-      const now = new Date().toISOString()
-      if (authStore.isAdmin) {
-        if (showArchivedAppointments.value) {
-          query = query.lte('archived_at', now)
-        } else {
-          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
-        }
-      } else {
-        query = query.eq('user_id', authStore.userId)
-        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
-      }
-
-      // Search functionality
-      if (appointmentsSearchQuery.value) {
-        query = query.or(
-          `full_name.ilike.%${appointmentsSearchQuery.value}%,email.ilike.%${appointmentsSearchQuery.value}%,appointment_type.ilike.%${appointmentsSearchQuery.value}%`,
-        )
-      }
-
-      const { data, error: fetchError, count } = await query
-
-      if (fetchError) throw fetchError
-
-      appointments.value = data || []
-      appointmentsTotal.value = count || 0
-    } catch (err: any) {
-      error.value = err.message
-      console.error('Error fetching appointments:', err)
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const searchAppointments = async (query: string) => {
-    appointmentsSearchQuery.value = query
-    appointmentsPage.value = 1
-    await fetchAppointments()
-  }
-
-  const clearAppointmentsSearch = async () => {
-    appointmentsSearchQuery.value = ''
-    appointmentsPage.value = 1
-    await fetchAppointments()
-  }
-
-  const createAppointment = async (
-    appointment: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'user_id' | 'archived_at'>,
+  const updateRegistration = async (
+    id: number,
+    updates: Partial<Omit<TrainingRegistration, 'id' | 'created_at' | 'updated_at' | 'user_id'>>,
   ) => {
     loading.value = true
     error.value = null
 
     try {
-      const { data, error: createError } = await supabase
-        .from('appointments')
-        .insert([
-          {
-            ...appointment,
-            user_id: authStore.userId,
-          },
-        ])
-        .select()
-        .single()
+      // If confirming a registration, check if training is still in progress and has capacity
+      if (updates.status === 'confirmed') {
+        // Get the registration details
+        const { data: regData, error: regError } = await supabase
+          .from('training_registrations')
+          .select('training_id')
+          .eq('id', id)
+          .single()
 
-      if (createError) throw createError
+        if (regError) throw regError
 
-      await fetchAppointments()
-      return { success: true, data }
-    } catch (err: any) {
-      error.value = err.message
-      console.error('Error creating appointment:', err)
-      return { success: false, error: error.value }
-    } finally {
-      loading.value = false
-    }
-  }
+        // Get the training details
+        const { data: trainingData, error: trainingError } = await supabase
+          .from('trainings')
+          .select('capacity, end_date_time')
+          .eq('id', regData.training_id)
+          .single()
 
-  const updateAppointment = async (id: number, updates: Partial<Appointment>) => {
-    loading.value = true
-    error.value = null
+        if (trainingError) throw trainingError
 
-    try {
+        // Check if training is still in progress
+        const isInProgress = new Date(trainingData.end_date_time) >= new Date()
+
+        if (isInProgress) {
+          // Check current confirmed count
+          const { count: confirmedCount } = await supabase
+            .from('training_registrations')
+            .select('*', { count: 'exact', head: true })
+            .eq('training_id', regData.training_id)
+            .eq('status', 'confirmed')
+
+          // Check if there's available capacity
+          if ((confirmedCount || 0) >= trainingData.capacity) {
+            throw new Error('Training is at full capacity')
+          }
+        }
+      }
+
       const { data, error: updateError } = await supabase
-        .from('appointments')
+        .from('training_registrations')
         .update(updates)
         .eq('id', id)
         .select()
@@ -575,39 +454,43 @@ export const useActivities = () => {
 
       if (updateError) throw updateError
 
-      await fetchAppointments()
+      await fetchRegistrations()
+      await fetchTrainings() // Refresh trainings to show updated confirmed count
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error updating appointment:', err)
-      return { success: false, error: error.value }
+      console.error('Error updating registration:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
-  const deleteAppointment = async (id: number) => {
+  const deleteRegistration = async (id: number) => {
     loading.value = true
     error.value = null
 
     try {
-      const { error: deleteError } = await supabase.from('appointments').delete().eq('id', id)
+      const { error: deleteError } = await supabase
+        .from('training_registrations')
+        .delete()
+        .eq('id', id)
 
       if (deleteError) throw deleteError
 
-      await fetchAppointments()
+      await fetchRegistrations()
       return { success: true }
     } catch (err: any) {
       error.value = err.message
-      console.error('Error deleting appointment:', err)
-      return { success: false, error: error.value }
+      console.error('Error deleting registration:', err)
+      return { success: false, error: err.message }
     } finally {
       loading.value = false
     }
   }
 
   // ============================================
-  // IMAGE HANDLING
+  // IMAGE MANAGEMENT
   // ============================================
 
   const uploadImage = async (file: File): Promise<string | null> => {
@@ -616,18 +499,13 @@ export const useActivities = () => {
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`
       const filePath = `${fileName}`
 
-      const { error: uploadError } = await supabase.storage
-        .from('activities')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false,
-        })
+      const { error: uploadError } = await supabase.storage.from('trainings').upload(filePath, file)
 
       if (uploadError) throw uploadError
 
       const {
         data: { publicUrl },
-      } = supabase.storage.from('activities').getPublicUrl(filePath)
+      } = supabase.storage.from('trainings').getPublicUrl(filePath)
 
       return publicUrl
     } catch (err: any) {
@@ -638,12 +516,15 @@ export const useActivities = () => {
 
   const deleteImage = async (imageUrl: string): Promise<boolean> => {
     try {
-      const path = imageUrl.split('/activities/').pop()
-      if (!path) return false
+      const urlParts = imageUrl.split('/trainings/')
+      if (urlParts.length < 2) return false
 
-      const { error: deleteError } = await supabase.storage.from('activities').remove([path])
+      const filePath = urlParts[1]
+
+      const { error: deleteError } = await supabase.storage.from('trainings').remove([filePath])
 
       if (deleteError) throw deleteError
+
       return true
     } catch (err: any) {
       console.error('Error deleting image:', err)
@@ -656,160 +537,102 @@ export const useActivities = () => {
   // ============================================
 
   const setupRealtimeSubscriptions = () => {
-    // Activities subscription
-    activitiesChannel = supabase
-      .channel('activities-changes')
+    // Trainings subscription
+    trainingsChannel = supabase
+      .channel('trainings-changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'activities',
-        },
+        { event: '*', schema: 'public', table: 'trainings' },
         async (payload) => {
-          console.log('Activities change received:', payload)
-          await fetchActivities()
+          console.log('Trainings change received!', payload)
+          await fetchTrainings()
+          await fetchRegistrations()
         },
       )
       .subscribe()
 
-    // Bookings subscription
-    bookingsChannel = supabase
-      .channel('bookings-changes')
+    // Registrations subscription
+    registrationsChannel = supabase
+      .channel('registrations-changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bookings',
-        },
+        { event: '*', schema: 'public', table: 'training_registrations' },
         async (payload) => {
-          console.log('Bookings change received:', payload)
-          await fetchBookings()
-          // Also refresh activities to update confirmed counts and booking statuses
-          await fetchActivities()
-        },
-      )
-      .subscribe()
-
-    // Appointments subscription
-    appointmentsChannel = supabase
-      .channel('appointments-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'appointments',
-        },
-        async (payload) => {
-          console.log('Appointments change received:', payload)
-          await fetchAppointments()
+          console.log('Registrations change received!', payload)
+          await fetchRegistrations()
+          // Also refresh trainings to update confirmed counts and user registration status
+          await fetchTrainings()
         },
       )
       .subscribe()
   }
 
   const unsubscribeRealtime = () => {
-    if (activitiesChannel) {
-      supabase.removeChannel(activitiesChannel)
-      activitiesChannel = null
+    if (trainingsChannel) {
+      supabase.removeChannel(trainingsChannel)
+      trainingsChannel = null
     }
-    if (bookingsChannel) {
-      supabase.removeChannel(bookingsChannel)
-      bookingsChannel = null
-    }
-    if (appointmentsChannel) {
-      supabase.removeChannel(appointmentsChannel)
-      appointmentsChannel = null
+    if (registrationsChannel) {
+      supabase.removeChannel(registrationsChannel)
+      registrationsChannel = null
     }
   }
 
   /**
-   * Change page for activities
+   * Change page for trainings
    */
-  const goToActivitiesPage = async (page: number) => {
-    if (page >= 1 && page <= activitiesTotalPages.value) {
-      activitiesPage.value = page
-      await fetchActivities()
+  const goToTrainingsPage = async (page: number) => {
+    if (page >= 1 && page <= trainingsTotalPages.value) {
+      trainingsPage.value = page
+      await fetchTrainings()
     }
   }
 
   /**
-   * Change page for bookings
+   * Change page for registrations
    */
-  const goToBookingsPage = async (page: number) => {
-    if (page >= 1 && page <= bookingsTotalPages.value) {
-      bookingsPage.value = page
-      await fetchBookings()
-    }
-  }
-
-  /**
-   * Change page for appointments
-   */
-  const goToAppointmentsPage = async (page: number) => {
-    if (page >= 1 && page <= appointmentsTotalPages.value) {
-      appointmentsPage.value = page
-      await fetchAppointments()
+  const goToRegistrationsPage = async (page: number) => {
+    if (page >= 1 && page <= registrationsTotalPages.value) {
+      registrationsPage.value = page
+      await fetchRegistrations()
     }
   }
 
   return {
     // State
-    activities,
-    bookings,
-    appointments,
+    trainings,
+    registrations,
     loading,
     error,
-
-    // Pagination
-    activitiesTotal,
-    bookingsTotal,
-    appointmentsTotal,
-    activitiesPage,
-    bookingsPage,
-    appointmentsPage,
+    trainingsTotal,
+    registrationsTotal,
+    trainingsPage,
+    registrationsPage,
     itemsPerPage,
-    activitiesSearchQuery,
-    bookingsSearchQuery,
-    appointmentsSearchQuery,
-    activitiesTotalPages,
-    bookingsTotalPages,
-    appointmentsTotalPages,
-    showArchivedActivities,
-    showArchivedAppointments,
-
-    // Activities methods
-    fetchActivities,
-    loadMoreActivities,
-    searchActivities,
-    clearActivitiesSearch,
-    createActivity,
-    updateActivity,
-    deleteActivity,
-    goToActivitiesPage,
-
-    // Bookings methods
-    fetchBookings,
-    searchBookings,
-    clearBookingsSearch,
-    createBooking,
-    updateBooking,
-    deleteBooking,
-    goToBookingsPage,
-
-    // Appointments methods
-    fetchAppointments,
-    searchAppointments,
-    clearAppointmentsSearch,
-    createAppointment,
-    updateAppointment,
-    deleteAppointment,
-    goToAppointmentsPage,
-
+    trainingsTotalPages,
+    registrationsTotalPages,
+    showArchivedTrainings,
+    // Trainings
+    fetchTrainings,
+    loadMoreTrainings,
+    searchTrainings,
+    clearTrainingsSearch,
+    createTraining,
+    updateTraining,
+    deleteTraining,
+    goToTrainingsPage,
+    // Registrations
+    fetchRegistrations,
+    searchRegistrations,
+    clearRegistrationsSearch,
+    createRegistration,
+    updateRegistration,
+    deleteRegistration,
+    goToRegistrationsPage,
     // Realtime
     setupRealtimeSubscriptions,
     unsubscribeRealtime,
   }
 }
+
+export { useTrainings }
