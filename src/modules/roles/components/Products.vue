@@ -426,6 +426,15 @@ const orderHeaders = [
   { title: 'Actions', key: 'actions' },
 ]
 
+const userOrderHeaders = [
+  { title: 'Product Name', key: 'product_name' },
+  { title: 'Quantity', key: 'quantity' },
+  { title: 'Total Price', key: 'total_price' },
+  { title: 'Date Ordered', key: 'created_at' },
+  { title: 'Status', key: 'order_status' },
+  { title: 'Actions', key: 'actions' },
+]
+
 const productHeaders = [
   { title: 'Product', key: 'name' },
   { title: 'Category', key: 'category' },
@@ -954,7 +963,7 @@ const orderStatusOptions = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancell
                 </v-card-title>
                 <v-card-text>
                   <v-data-table
-                    :headers="orderHeaders"
+                    :headers="userOrderHeaders"
                     :items="orders"
                     item-value="id"
                     hide-default-footer
@@ -1181,7 +1190,12 @@ const orderStatusOptions = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancell
     />
 
     <!-- User Detail Modal -->
-    <UserDetailModal v-model="showUserDetail" :record="userDetailRecord" record-type="order" />
+    <UserDetailModal
+      v-model="showUserDetail"
+      :record="userDetailRecord"
+      record-type="order"
+      :hide-user-info="userType !== 'admin'"
+    />
   </div>
 </template>
 

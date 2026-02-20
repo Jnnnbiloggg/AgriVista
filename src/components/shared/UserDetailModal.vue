@@ -17,6 +17,7 @@ interface Props {
   modelValue: boolean
   record: Record<string, any> | null
   recordType: RecordType
+  hideUserInfo?: boolean
 }
 
 const props = defineProps<Props>()
@@ -209,11 +210,19 @@ const displayContact = (): string => {
       <div class="modal-header px-6 pt-6 pb-4 d-flex align-center justify-space-between">
         <div class="d-flex align-center gap-3">
           <v-avatar color="primary" size="44">
-            <v-icon color="white" size="22">mdi-account-details</v-icon>
+            <v-icon color="white" size="22">{{
+              hideUserInfo ? recordIcon[recordType] : 'mdi-account-details'
+            }}</v-icon>
           </v-avatar>
           <div>
-            <div class="text-h6 font-weight-bold">User Details</div>
-            <div class="text-caption text-grey-darken-1">Full profile + {{ recordType }} info</div>
+            <div class="text-h6 font-weight-bold">
+              {{ hideUserInfo ? recordTitle[recordType] : 'User Details' }}
+            </div>
+            <div class="text-caption text-grey-darken-1">
+              {{
+                hideUserInfo ? 'View record information' : 'Full profile + ' + recordType + ' info'
+              }}
+            </div>
           </div>
         </div>
         <v-btn icon size="small" variant="text" @click="close">
@@ -224,72 +233,74 @@ const displayContact = (): string => {
       <v-divider />
 
       <v-card-text class="pa-6">
-        <!-- User Information Section -->
-        <div class="section-label mb-3">
-          <v-icon size="16" color="primary" class="mr-1">mdi-account</v-icon>
-          <span class="text-subtitle-2 font-weight-bold text-primary text-uppercase tracking-wide"
-            >User Information</span
-          >
-        </div>
+        <!-- User Information Section (hidden for regular users) -->
+        <template v-if="!hideUserInfo">
+          <div class="section-label mb-3">
+            <v-icon size="16" color="primary" class="mr-1">mdi-account</v-icon>
+            <span class="text-subtitle-2 font-weight-bold text-primary text-uppercase tracking-wide"
+              >User Information</span
+            >
+          </div>
 
-        <v-list density="compact" class="info-list rounded-lg mb-6">
-          <v-list-item prepend-icon="mdi-account-circle" class="px-3">
-            <template #title>
-              <span class="text-caption text-grey">Full Name</span>
-            </template>
-            <template #subtitle>
-              <span class="text-body-2 font-weight-medium">{{ displayName() }}</span>
-            </template>
-          </v-list-item>
-          <v-divider inset />
+          <v-list density="compact" class="info-list rounded-lg mb-6">
+            <v-list-item prepend-icon="mdi-account-circle" class="px-3">
+              <template #title>
+                <span class="text-caption text-grey">Full Name</span>
+              </template>
+              <template #subtitle>
+                <span class="text-body-2 font-weight-medium">{{ displayName() }}</span>
+              </template>
+            </v-list-item>
+            <v-divider inset />
 
-          <v-list-item prepend-icon="mdi-email-outline" class="px-3">
-            <template #title><span class="text-caption text-grey">Email</span></template>
-            <template #subtitle>
-              <span class="text-body-2 font-weight-medium">{{ displayEmail() }}</span>
-            </template>
-          </v-list-item>
-          <v-divider inset />
+            <v-list-item prepend-icon="mdi-email-outline" class="px-3">
+              <template #title><span class="text-caption text-grey">Email</span></template>
+              <template #subtitle>
+                <span class="text-body-2 font-weight-medium">{{ displayEmail() }}</span>
+              </template>
+            </v-list-item>
+            <v-divider inset />
 
-          <v-list-item prepend-icon="mdi-phone-outline" class="px-3">
-            <template #title><span class="text-caption text-grey">Contact Number</span></template>
-            <template #subtitle>
-              <div class="d-flex align-center">
-                <span class="text-body-2 font-weight-medium">{{ displayContact() }}</span>
-                <v-progress-circular
-                  v-if="loadingProfile"
-                  indeterminate
-                  size="12"
-                  width="2"
-                  color="grey"
-                  class="ml-2"
-                />
-              </div>
-            </template>
-          </v-list-item>
-          <v-divider inset />
+            <v-list-item prepend-icon="mdi-phone-outline" class="px-3">
+              <template #title><span class="text-caption text-grey">Contact Number</span></template>
+              <template #subtitle>
+                <div class="d-flex align-center">
+                  <span class="text-body-2 font-weight-medium">{{ displayContact() }}</span>
+                  <v-progress-circular
+                    v-if="loadingProfile"
+                    indeterminate
+                    size="12"
+                    width="2"
+                    color="grey"
+                    class="ml-2"
+                  />
+                </div>
+              </template>
+            </v-list-item>
+            <v-divider inset />
 
-          <v-list-item prepend-icon="mdi-gender-male-female" class="px-3">
-            <template #title><span class="text-caption text-grey">Sex</span></template>
-            <template #subtitle>
-              <v-skeleton-loader v-if="loadingProfile" type="text" width="80" class="mt-1" />
-              <span v-else class="text-body-2 font-weight-medium">{{
-                sexLabel(extProfile?.sex ?? null)
-              }}</span>
-            </template>
-          </v-list-item>
-          <v-divider inset />
+            <v-list-item prepend-icon="mdi-gender-male-female" class="px-3">
+              <template #title><span class="text-caption text-grey">Sex</span></template>
+              <template #subtitle>
+                <v-skeleton-loader v-if="loadingProfile" type="text" width="80" class="mt-1" />
+                <span v-else class="text-body-2 font-weight-medium">{{
+                  sexLabel(extProfile?.sex ?? null)
+                }}</span>
+              </template>
+            </v-list-item>
+            <v-divider inset />
 
-          <v-list-item prepend-icon="mdi-map-marker-outline" class="px-3">
-            <template #title><span class="text-caption text-grey">Address</span></template>
-            <template #subtitle>
-              <v-skeleton-loader v-if="loadingProfile" type="text" width="160" class="mt-1" />
-              <span v-else class="text-body-2 font-weight-medium">{{
-                extProfile?.address || '—'
-              }}</span>
-            </template>
-          </v-list-item>
-        </v-list>
+            <v-list-item prepend-icon="mdi-map-marker-outline" class="px-3">
+              <template #title><span class="text-caption text-grey">Address</span></template>
+              <template #subtitle>
+                <v-skeleton-loader v-if="loadingProfile" type="text" width="160" class="mt-1" />
+                <span v-else class="text-body-2 font-weight-medium">{{
+                  extProfile?.address || '—'
+                }}</span>
+              </template>
+            </v-list-item>
+          </v-list>
+        </template>
 
         <!-- Record Details Section -->
         <div class="section-label mb-3">

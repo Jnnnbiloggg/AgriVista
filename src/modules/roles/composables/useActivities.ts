@@ -20,7 +20,6 @@ export interface Activity {
   created_by: string | null
   created_at: string
   updated_at: string
-  visible_until: string | null
   archived_at: string | null
   confirmed_count?: number
   user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
@@ -130,9 +129,8 @@ export const useActivities = () => {
           query = query.or(`archived_at.gt.${now},archived_at.is.null`)
         }
       } else {
-        // Users should only see unarchived AND visible activities
+        // Users should only see unarchived activities
         query = query.or(`archived_at.gt.${now},archived_at.is.null`)
-        query = query.or(`visible_until.gt.${now},visible_until.is.null`)
       }
 
       // Search functionality
@@ -212,10 +210,7 @@ export const useActivities = () => {
   }
 
   const createActivity = async (
-    activity: Omit<
-      Activity,
-      'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at' | 'visible_until'
-    >,
+    activity: Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at'>,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -228,31 +223,12 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
-      // Calculate visible_until
-      let visible_until: string | null = null
-      if (activity.duration && activity.duration.toLowerCase() !== 'infinite') {
-        const match = activity.duration.match(/^(\d+)\s*(\w+)$/)
-        if (match) {
-          const num = parseInt(match[1])
-          const unit = match[2].toLowerCase()
-          const dateObj = new Date()
-          if (unit === 'minutes') dateObj.setMinutes(dateObj.getMinutes() + num)
-          else if (unit === 'hours') dateObj.setHours(dateObj.getHours() + num)
-          else if (unit === 'days') dateObj.setDate(dateObj.getDate() + num)
-          else if (unit === 'weeks') dateObj.setDate(dateObj.getDate() + num * 7)
-          else if (unit === 'months') dateObj.setMonth(dateObj.getMonth() + num)
-          else if (unit === 'years') dateObj.setFullYear(dateObj.getFullYear() + num)
-          visible_until = dateObj.toISOString()
-        }
-      }
-
       const { data, error: createError } = await supabase
         .from('activities')
         .insert([
           {
             ...activity,
             image_url: imageUrl,
-            visible_until,
             created_by: authStore.userId,
           },
         ])
@@ -275,10 +251,7 @@ export const useActivities = () => {
   const updateActivity = async (
     id: number,
     updates: Partial<
-      Omit<
-        Activity,
-        'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at' | 'visible_until'
-      >
+      Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at'>
     >,
     imageFile: File | null = null,
   ) => {
@@ -296,33 +269,10 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
-      // Calculate visible_until if duration is updated
-      let visible_until_update: { visible_until?: string | null } = {}
-      if (updates.duration) {
-        if (updates.duration.toLowerCase() === 'infinite') {
-          visible_until_update.visible_until = null
-        } else {
-          const match = updates.duration.match(/^(\d+)\s*(\w+)$/)
-          if (match) {
-            const num = parseInt(match[1])
-            const unit = match[2].toLowerCase()
-            const dateObj = new Date()
-            if (unit === 'minutes') dateObj.setMinutes(dateObj.getMinutes() + num)
-            else if (unit === 'hours') dateObj.setHours(dateObj.getHours() + num)
-            else if (unit === 'days') dateObj.setDate(dateObj.getDate() + num)
-            else if (unit === 'weeks') dateObj.setDate(dateObj.getDate() + num * 7)
-            else if (unit === 'months') dateObj.setMonth(dateObj.getMonth() + num)
-            else if (unit === 'years') dateObj.setFullYear(dateObj.getFullYear() + num)
-            visible_until_update.visible_until = dateObj.toISOString()
-          }
-        }
-      }
-
       const { data, error: updateError } = await supabase
         .from('activities')
         .update({
           ...updates,
-          ...visible_until_update,
           image_url: imageUrl,
         })
         .eq('id', id)

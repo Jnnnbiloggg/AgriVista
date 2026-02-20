@@ -152,21 +152,6 @@ const { imageFile, imagePreview, handleImageSelect, removeImage } = useImageHand
   allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
 })
 
-// Separate duration fields for better UX
-const durationNumber = ref<number | null>(null)
-const durationUnit = ref<string>('')
-
-// Duration units options
-const durationUnits = [
-  { title: 'Minutes', value: 'minutes' },
-  { title: 'Hours', value: 'hours' },
-  { title: 'Days', value: 'days' },
-  { title: 'Weeks', value: 'weeks' },
-  { title: 'Months', value: 'months' },
-  { title: 'Years', value: 'years' },
-  { title: 'Infinite', value: 'infinite' },
-]
-
 // Admin tab
 const adminTab = computed({
   get: () => {
@@ -327,7 +312,6 @@ const activityDialog = useFormDialog<{
   location: string
   date: string
   time: string
-  duration?: string | null
   image_url?: string | null
   id?: number
 }>({
@@ -339,7 +323,6 @@ const activityDialog = useFormDialog<{
     location: '',
     date: '',
     time: '',
-    duration: '',
     image_url: null,
   }),
   validate: (data) => {
@@ -354,25 +337,14 @@ const activityDialog = useFormDialog<{
     ) {
       return { valid: false, message: 'Please fill in all required fields' }
     }
-    if (durationUnit.value !== 'infinite' && (!durationNumber.value || !durationUnit.value)) {
-      return { valid: false, message: 'Please specify duration with number and unit' }
-    }
     return { valid: true }
   },
   onSubmit: async (data, isEditing): Promise<{ success: boolean; error?: string }> => {
     let result
-    const duration =
-      durationUnit.value === 'infinite'
-        ? 'Infinite'
-        : `${durationNumber.value} ${durationUnit.value}`
-    const payload = { ...data, duration }
     if (isEditing && data.id) {
-      result = await updateActivity(data.id, { ...payload }, imageFile.value)
+      result = await updateActivity(data.id, { ...data }, imageFile.value)
     } else {
-      result = await createActivity(
-        { ...payload, image_url: payload.image_url ?? null },
-        imageFile.value,
-      )
+      result = await createActivity({ ...data, image_url: data.image_url ?? null }, imageFile.value)
     }
     return {
       success: result.success,
@@ -382,26 +354,6 @@ const activityDialog = useFormDialog<{
   onOpen: () => {
     imageFile.value = null
     imagePreview.value = activityDialog.editingItem.value?.image_url || null
-
-    if (activityDialog.editingItem.value && activityDialog.editingItem.value.duration) {
-      const durationMatch =
-        activityDialog.editingItem.value.duration.toLowerCase() === 'infinite'
-          ? null
-          : activityDialog.editingItem.value.duration.match(/^(\d+)\s*(\w+)$/)
-      if (durationMatch) {
-        durationNumber.value = parseInt(durationMatch[1])
-        durationUnit.value = durationMatch[2].toLowerCase()
-      } else if (activityDialog.editingItem.value.duration.toLowerCase() === 'infinite') {
-        durationNumber.value = null
-        durationUnit.value = 'infinite'
-      } else {
-        durationNumber.value = null
-        durationUnit.value = ''
-      }
-    } else {
-      durationNumber.value = null
-      durationUnit.value = ''
-    }
   },
   showSnackbar,
   successMessage: {
@@ -599,6 +551,20 @@ const appointmentHeaders = [
   { title: 'Actions', key: 'actions' },
 ]
 
+const userBookingHeaders = [
+  { title: 'Activity Name', key: 'activity_name' },
+  { title: 'Booking Date', key: 'booking_date' },
+  { title: 'Status', key: 'status' },
+  { title: 'Actions', key: 'actions' },
+]
+
+const userAppointmentHeaders = [
+  { title: 'Type', key: 'appointment_type' },
+  { title: 'Date & Time', key: 'date' },
+  { title: 'Status', key: 'status' },
+  { title: 'Actions', key: 'actions' },
+]
+
 // User Detail Modal
 const showUserDetail = ref(false)
 const userDetailRecord = ref<any | null>(null)
@@ -616,6 +582,16 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
   const now = new Date()
   const diffTime = activityDateTime.getTime() - now.getTime()
   return diffTime / (1000 * 3600 * 24) >= 3
+}
+
+const toggleAndFetch = () => {
+  showArchivedActivities.value = !showArchivedActivities.value
+  fetchActivities()
+}
+
+const toggleAndFetchAppointments = () => {
+  showArchivedAppointments.value = !showArchivedAppointments.value
+  fetchAppointments()
 }
 </script>
 
@@ -798,7 +774,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
           <!-- Data Table -->
           <v-data-table
             v-else
-            :headers="bookingHeaders"
+            :headers="userBookingHeaders"
             :items="bookings"
             item-value="id"
             hide-default-footer
@@ -894,7 +870,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                   <!-- Data Table -->
                   <v-data-table
                     v-else
-                    :headers="appointmentHeaders"
+                    :headers="userAppointmentHeaders"
                     :items="appointments"
                     item-value="id"
                     hide-default-footer
@@ -984,10 +960,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                         :color="showArchivedActivities ? 'secondary' : 'grey'"
                         variant="tonal"
                         block
-                        @click="
-                          showArchivedActivities = !showArchivedActivities;
-                          fetchActivities();
-                        "
+                        @click="toggleAndFetch"
                       >
                         {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
                       </v-btn>
@@ -1023,10 +996,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                       <v-btn
                         :color="showArchivedActivities ? 'secondary' : 'grey'"
                         variant="tonal"
-                        @click="
-                          showArchivedActivities = !showArchivedActivities;
-                          fetchActivities();
-                        "
+                        @click="toggleAndFetch"
                       >
                         {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
                       </v-btn>
@@ -1288,10 +1258,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                         :color="showArchivedAppointments ? 'secondary' : 'grey'"
                         variant="tonal"
                         block
-                        @click="
-                          showArchivedAppointments = !showArchivedAppointments;
-                          fetchAppointments();
-                        "
+                        @click="toggleAndFetchAppointments"
                       >
                         {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
                       </v-btn>
@@ -1328,10 +1295,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                       <v-btn
                         :color="showArchivedAppointments ? 'secondary' : 'grey'"
                         variant="tonal"
-                        @click="
-                          showArchivedAppointments = !showArchivedAppointments;
-                          fetchAppointments();
-                        "
+                        @click="toggleAndFetchAppointments"
                       >
                         {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
                       </v-btn>
@@ -1701,37 +1665,6 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
                   required
                 ></v-text-field>
               </v-col>
-
-              <!-- Duration Section -->
-              <v-col cols="12" class="pb-0">
-                <v-label class="text-subtitle-2 mb-2">Duration *</v-label>
-              </v-col>
-              <v-col cols="6">
-                <v-select
-                  v-model="durationUnit"
-                  label="Unit"
-                  placeholder="Select unit"
-                  variant="outlined"
-                  density="comfortable"
-                  :items="durationUnits"
-                  :rules="[(v: any) => !!v || 'Unit is required']"
-                ></v-select>
-              </v-col>
-              <v-col cols="6" v-if="durationUnit !== 'infinite'">
-                <v-text-field
-                  v-model.number="durationNumber"
-                  label="Number"
-                  placeholder="e.g., 3"
-                  variant="outlined"
-                  density="comfortable"
-                  type="number"
-                  min="1"
-                  :rules="[
-                    (v: any) => !!v || 'Number is required',
-                    (v: any) => v > 0 || 'Must be greater than 0',
-                  ]"
-                ></v-text-field>
-              </v-col>
             </v-row>
           </v-form>
         </v-card-text>
@@ -1773,6 +1706,7 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
       v-model="showUserDetail"
       :record="userDetailRecord"
       :record-type="userDetailType"
+      :hide-user-info="userType !== 'admin'"
     />
   </div>
 </template>

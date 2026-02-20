@@ -181,7 +181,6 @@ interface TrainingForm {
   location: string
   start_date_time: string
   end_date_time: string
-  visible_until: string
   capacity: number
   topics: string[]
 }
@@ -193,7 +192,6 @@ const trainingDialog = useFormDialog<TrainingForm>({
     location: '',
     start_date_time: '',
     end_date_time: '',
-    visible_until: '',
     capacity: 0,
     topics: [],
   },
@@ -227,7 +225,6 @@ const trainingDialog = useFormDialog<TrainingForm>({
             location: formData.location,
             start_date_time: formData.start_date_time,
             end_date_time: formData.end_date_time,
-            visible_until: formData.visible_until || null,
             capacity: formData.capacity,
             topics: formData.topics,
             image_url: imagePreview.value,
@@ -242,7 +239,6 @@ const trainingDialog = useFormDialog<TrainingForm>({
             location: formData.location,
             start_date_time: formData.start_date_time,
             end_date_time: formData.end_date_time,
-            visible_until: formData.visible_until || null,
             capacity: formData.capacity,
             topics: formData.topics,
             image_url: null,
@@ -331,7 +327,6 @@ const handleEditTraining = (training: any) => {
     location: training.location,
     start_date_time: formatDateTimeLocal(training.start_date_time),
     end_date_time: formatDateTimeLocal(training.end_date_time),
-    visible_until: training.visible_until ? formatDateTimeLocal(training.visible_until) : '',
     capacity: training.capacity,
     topics: [...training.topics],
   })
@@ -451,6 +446,13 @@ const registrationHeaders = [
   { title: 'Training Name', key: 'training_name' },
   { title: 'Participant', key: 'user_name' },
   { title: 'Email', key: 'user_email' },
+  { title: 'Registered Date', key: 'created_at' },
+  { title: 'Status', key: 'status' },
+  { title: 'Actions', key: 'actions' },
+]
+
+const userRegistrationHeaders = [
+  { title: 'Training Name', key: 'training_name' },
   { title: 'Registered Date', key: 'created_at' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -1089,7 +1091,7 @@ const cancelUserRegistration = async (registrationId: number) => {
                 <v-card-text>
                   <!-- Registrations Table -->
                   <v-data-table
-                    :headers="registrationHeaders"
+                    :headers="userRegistrationHeaders"
                     :items="registrations"
                     item-value="id"
                     hide-default-footer
@@ -1214,17 +1216,6 @@ const cancelUserRegistration = async (registrationId: number) => {
                 type="datetime-local"
                 variant="outlined"
                 required
-              ></v-text-field>
-            </v-col>
-
-            <v-col cols="12" sm="4">
-              <v-text-field
-                v-model="trainingDialog.formData.value.visible_until"
-                label="Visible Until"
-                type="datetime-local"
-                variant="outlined"
-                hint="Date until users can browse this training"
-                persistent-hint
               ></v-text-field>
             </v-col>
 
@@ -1371,6 +1362,7 @@ const cancelUserRegistration = async (registrationId: number) => {
       v-model="showUserDetail"
       :record="userDetailRecord"
       record-type="registration"
+      :hide-user-info="userType !== 'admin'"
     />
   </div>
 </template>

@@ -101,10 +101,25 @@ Google OAuth is available for **regular users only** (admins must sign in with e
 
 ## Recent Updates
 
-- **Activities Module:** Added durations and 12-hour auto-archiving for activities and appointments. Upgraded "My Bookings" and "My Appointments" to use paginated data tables with user detail modals. Enforced a 3-day cancellation policy for both.
-- **Products Module:** Upgraded "My Orders" to use a paginated data table. Added status filters for order management. Enforced a 3-day cancellation policy for orders and formatting fixes for date.
-- **Trainings Module:** Added duration/visibility settings and 12-hour auto-archiving. Enforced a 3-day cancellation policy for registrations and overhauled "My Registrations" with a paginated data table. Removed unnecessary filtering toggles.
+### Archiving & Visibility (simplified per-module model)
+
+| Module            | Mechanism                             | How it works                                                                                        |
+| ----------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Activities**    | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                        |
+| **Appointments**  | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                        |
+| **Trainings**     | `archived_at` (auto)                  | Calculated via DB trigger: `end_date_time + 12 hours`. No manual input needed.                      |
+| **Announcements** | `visible_until` (from duration input) | Admin sets a duration (e.g. "3 days", "Infinite"). `visible_until` is calculated from the duration. |
+
+- Admins can toggle **Show Archived** to view past items.
+- Regular users only see unarchived (current) items.
+
+### Other changes
+
+- **Activities Module:** Upgraded "My Bookings" and "My Appointments" to paginated data tables with user detail modals. Enforced a 3-day cancellation policy for both. User tables hide personal info columns (shown only to admins).
+- **Products Module:** Upgraded "My Orders" to a paginated data table. Added status filters for order management. Enforced a 3-day cancellation policy and date formatting fixes. User tables hide buyer info columns (shown only to admins).
+- **Trainings Module:** Enforced a 3-day cancellation policy for registrations and overhauled "My Registrations" with a paginated data table. Removed unnecessary filtering toggles. User tables hide participant info columns (shown only to admins).
 - **Announcements Module:** Introduced an "infinite" duration option for announcements.
+- **User Detail Modal:** When opened from the user side, the "User Information" section is hidden — only record details (Booking/Appointment/Order/Registration) are shown. Admins see both sections.
 
 ## Where to Look in the Code
 

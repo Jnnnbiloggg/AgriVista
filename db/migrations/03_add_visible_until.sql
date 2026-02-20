@@ -1,12 +1,11 @@
--- Add visible_until to activities
-ALTER TABLE activities ADD COLUMN IF NOT EXISTS visible_until TIMESTAMPTZ;
+-- archived_at for activities (auto-calculated via trigger: event end + 12 hours)
 
 -- Drop archived_at if it exists (to clear out any failed generation expressions)
 ALTER TABLE activities DROP COLUMN IF EXISTS archived_at;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 
--- Add visible_until to trainings
-ALTER TABLE trainings ADD COLUMN IF NOT EXISTS visible_until TIMESTAMPTZ;
+
+-- archived_at for trainings (auto-calculated via trigger: end_date_time + 12 hours)
 
 -- Drop archived_at if it exists
 ALTER TABLE trainings DROP COLUMN IF EXISTS archived_at;
