@@ -131,6 +131,26 @@ const goToLanding = () => {
   router.push('/')
 }
 
+const switchRole = () => {
+  const newRole = selectedRole.value === 'admin' ? 'user' : 'admin'
+  selectedRole.value = newRole
+  // Reset form and messages when switching roles
+  errorMessage.value = ''
+  successMessage.value = ''
+  form.value = {
+    email: '',
+    password: '',
+    confirmPassword: '',
+    fullName: '',
+    rememberMe: false,
+  }
+  // Keep register mode off for admin; stay in login mode
+  if (newRole === 'admin') {
+    isRegisterMode.value = false
+  }
+  router.replace({ query: { ...route.query, role: newRole } })
+}
+
 const pageTitle = computed(() => {
   const prefix = isRegisterMode.value ? 'Create Account' : 'Welcome Back'
   if (selectedRole.value && !isRegisterMode.value) {
@@ -151,6 +171,22 @@ const pageSubtitle = computed(() => {
   <v-app>
     <v-main>
       <v-container fluid class="auth-container">
+        <!-- Role Switch Toggle (top right) -->
+        <div class="role-switch-banner">
+          <span class="role-switch-label">
+            {{
+              selectedRole === 'admin'
+                ? 'Looking to login as a user?'
+                : 'Looking to login as an admin?'
+            }}
+          </span>
+          <button class="role-switch-btn" @click="switchRole">
+            <v-icon size="14" class="mr-1">
+              {{ selectedRole === 'admin' ? 'mdi-account' : 'mdi-shield-account' }}
+            </v-icon>
+            {{ selectedRole === 'admin' ? 'User Login' : 'Admin Login' }}
+          </button>
+        </div>
         <v-row align="center" justify="center" class="fill-height">
           <!-- Left Side - Branding (hidden on mobile) -->
           <v-col cols="12" lg="6" class="hidden-md-and-down branding-section">
@@ -583,6 +619,52 @@ const features = [
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+.role-switch-banner {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50px;
+  padding: 6px 14px 6px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.role-switch-label {
+  font-size: 13px;
+  color: #616161;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.role-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.08);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+  border-radius: 50px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  line-height: 1.5;
+}
+
+.role-switch-btn:hover {
+  background: rgba(46, 125, 50, 0.16);
+  border-color: rgba(46, 125, 50, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(46, 125, 50, 0.2);
+}
+
 /* Responsive */
 @media (max-width: 1264px) {
   .auth-card {
@@ -597,6 +679,16 @@ const features = [
 
   .form-section {
     padding: 20px 12px;
+  }
+
+  .role-switch-banner {
+    top: 10px;
+    right: 10px;
+    padding: 5px 10px 5px 12px;
+  }
+
+  .role-switch-label {
+    display: none;
   }
 }
 </style>
