@@ -112,6 +112,7 @@ const durationUnits = [
   { title: 'Weeks', value: 'weeks' },
   { title: 'Months', value: 'months' },
   { title: 'Years', value: 'years' },
+  { title: 'Infinite', value: 'infinite' },
 ]
 
 // Use form dialog composable for announcement dialog
@@ -132,14 +133,17 @@ const announcementDialog = useFormDialog<{
     if (!data.title || !data.description) {
       return { valid: false, message: 'Please fill in all required fields' }
     }
-    if (!durationNumber.value || !durationUnit.value) {
+    if (durationUnit.value !== 'infinite' && (!durationNumber.value || !durationUnit.value)) {
       return { valid: false, message: 'Please specify duration with number and unit' }
     }
     return { valid: true }
   },
   onSubmit: async (data, isEditing): Promise<{ success: boolean; error?: string }> => {
     // Combine duration number and unit
-    const duration = `${durationNumber.value} ${durationUnit.value}`
+    const duration =
+      durationUnit.value === 'infinite'
+        ? 'Infinite'
+        : `${durationNumber.value} ${durationUnit.value}`
     const formData = { ...data, duration }
 
     if (isEditing && data.id) {
@@ -155,10 +159,16 @@ const announcementDialog = useFormDialog<{
 
     // Parse duration if editing
     if (announcementDialog.editingItem.value) {
-      const durationMatch = announcementDialog.editingItem.value.duration.match(/^(\d+)\s*(\w+)$/)
+      const durationMatch =
+        announcementDialog.editingItem.value.duration.toLowerCase() === 'infinite'
+          ? null
+          : announcementDialog.editingItem.value.duration.match(/^(\d+)\s*(\w+)$/)
       if (durationMatch) {
         durationNumber.value = parseInt(durationMatch[1])
         durationUnit.value = durationMatch[2].toLowerCase()
+      } else if (announcementDialog.editingItem.value.duration.toLowerCase() === 'infinite') {
+        durationNumber.value = null
+        durationUnit.value = 'infinite'
       } else {
         durationNumber.value = null
         durationUnit.value = ''
@@ -229,9 +239,16 @@ const pageSubtitle = computed(() =>
 
 // Computed property to check if form is valid
 const isFormValid = computed(() => {
-  return (
+  const isTitleDescValid =
     announcementDialog.formData.value.title.trim() !== '' &&
-    announcementDialog.formData.value.description.trim() !== '' &&
+    announcementDialog.formData.value.description.trim() !== ''
+
+  if (durationUnit.value === 'infinite') {
+    return isTitleDescValid
+  }
+
+  return (
+    isTitleDescValid &&
     durationNumber.value !== null &&
     durationNumber.value > 0 &&
     durationUnit.value !== ''
@@ -575,6 +592,17 @@ const closeAnnouncementDialog = () => {
                 <v-label class="text-subtitle-2 mb-2">Duration *</v-label>
               </v-col>
               <v-col cols="6">
+                <v-select
+                  v-model="durationUnit"
+                  label="Unit"
+                  placeholder="Select unit"
+                  variant="outlined"
+                  density="comfortable"
+                  :items="durationUnits"
+                  :rules="[(v: any) => !!v || 'Unit is required']"
+                ></v-select>
+              </v-col>
+              <v-col cols="6" v-if="durationUnit !== 'infinite'">
                 <v-text-field
                   v-model.number="durationNumber"
                   label="Number"
@@ -588,17 +616,6 @@ const closeAnnouncementDialog = () => {
                     (v: any) => v > 0 || 'Must be greater than 0',
                   ]"
                 ></v-text-field>
-              </v-col>
-              <v-col cols="6">
-                <v-select
-                  v-model="durationUnit"
-                  label="Unit"
-                  placeholder="Select unit"
-                  variant="outlined"
-                  density="comfortable"
-                  :items="durationUnits"
-                  :rules="[(v: any) => !!v || 'Unit is required']"
-                ></v-select>
               </v-col>
             </v-row>
 

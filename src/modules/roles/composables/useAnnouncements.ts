@@ -13,6 +13,7 @@ export interface Announcement {
   created_by: string | null
   created_at: string
   updated_at: string
+  visible_until: string | null
 }
 
 export interface PaginationOptions {
@@ -72,6 +73,14 @@ export const useAnnouncements = () => {
 
       // Apply sorting
       query = query.order(sortBy.value, { ascending: sortOrder.value === 'asc' })
+
+      // Filter visible announcements for users
+      const { data: userData } = await supabase.auth.getUser()
+      const isUserAdmin = await supabase.rpc('is_admin', { user_email: userData.user?.email })
+      if (!isUserAdmin.data) {
+        const now = new Date().toISOString()
+        query = query.or(`visible_until.gt.${now},visible_until.is.null`)
+      }
 
       // Apply pagination
       const from = (currentPage.value - 1) * itemsPerPage.value
@@ -157,7 +166,10 @@ export const useAnnouncements = () => {
    * Create new announcement (Admin only)
    */
   const createAnnouncement = async (
-    announcement: Omit<Announcement, 'id' | 'created_at' | 'updated_at' | 'created_by'>,
+    announcement: Omit<
+      Announcement,
+      'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until'
+    >,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -179,12 +191,31 @@ export const useAnnouncements = () => {
         data: { user },
       } = await supabase.auth.getUser()
 
+      // Calculate visible_until
+      let visible_until: string | null = null
+      if (announcement.duration.toLowerCase() !== 'infinite') {
+        const match = announcement.duration.match(/^(\d+)\s*(\w+)$/)
+        if (match) {
+          const num = parseInt(match[1])
+          const unit = match[2].toLowerCase()
+          const date = new Date()
+          if (unit === 'minutes') date.setMinutes(date.getMinutes() + num)
+          else if (unit === 'hours') date.setHours(date.getHours() + num)
+          else if (unit === 'days') date.setDate(date.getDate() + num)
+          else if (unit === 'weeks') date.setDate(date.getDate() + num * 7)
+          else if (unit === 'months') date.setMonth(date.getMonth() + num)
+          else if (unit === 'years') date.setFullYear(date.getFullYear() + num)
+          visible_until = date.toISOString()
+        }
+      }
+
       const { data, error: createError } = await supabase
         .from('announcements')
         .insert([
           {
             ...announcement,
             image_url,
+            visible_until,
             created_by: user?.id || null,
           },
         ])
@@ -211,7 +242,9 @@ export const useAnnouncements = () => {
    */
   const updateAnnouncement = async (
     id: number,
-    updates: Partial<Omit<Announcement, 'id' | 'created_at' | 'updated_at' | 'created_by'>>,
+    updates: Partial<
+      Omit<Announcement, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until'>
+    >,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -234,10 +267,33 @@ export const useAnnouncements = () => {
         }
       }
 
+      // Calculate visible_until if duration is updated
+      let visible_until_update: { visible_until?: string | null } = {}
+      if (updates.duration) {
+        if (updates.duration.toLowerCase() === 'infinite') {
+          visible_until_update.visible_until = null
+        } else {
+          const match = updates.duration.match(/^(\d+)\s*(\w+)$/)
+          if (match) {
+            const num = parseInt(match[1])
+            const unit = match[2].toLowerCase()
+            const date = new Date()
+            if (unit === 'minutes') date.setMinutes(date.getMinutes() + num)
+            else if (unit === 'hours') date.setHours(date.getHours() + num)
+            else if (unit === 'days') date.setDate(date.getDate() + num)
+            else if (unit === 'weeks') date.setDate(date.getDate() + num * 7)
+            else if (unit === 'months') date.setMonth(date.getMonth() + num)
+            else if (unit === 'years') date.setFullYear(date.getFullYear() + num)
+            visible_until_update.visible_until = date.toISOString()
+          }
+        }
+      }
+
       const { data, error: updateError } = await supabase
         .from('announcements')
         .update({
           ...updates,
+          ...visible_until_update,
           image_url,
         })
         .eq('id', id)

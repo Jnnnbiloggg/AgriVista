@@ -9,11 +9,14 @@ CREATE TABLE IF NOT EXISTS activities (
   type TEXT NOT NULL,
   capacity INTEGER NOT NULL,
   location TEXT NOT NULL,
+  duration TEXT,
   date DATE NOT NULL,
   time TIME NOT NULL,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  visible_until TIMESTAMPTZ,
+  archived_at TIMESTAMPTZ
 );
 
 -- Bookings Table
@@ -43,7 +46,8 @@ CREATE TABLE IF NOT EXISTS appointments (
   note TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  archived_at TIMESTAMPTZ
 );
 
 -- Enable Row Level Security
@@ -266,3 +270,29 @@ CREATE POLICY "Admins can delete activity images"
     bucket_id = 'activities' AND
     is_admin(auth.jwt() ->> 'email')
   );
+
+-- ============================================
+-- ARCHIVING TRIGGERS
+-- ============================================
+
+-- Function and triggers for tracking archived_at
+CREATE OR REPLACE FUNCTION set_archived_at_from_date_time()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Generate archived_at from date and time + 12 hours
+  NEW.archived_at = (NEW.date + NEW.time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_activities_archived_at ON activities;
+CREATE TRIGGER trg_activities_archived_at
+BEFORE INSERT OR UPDATE ON activities
+FOR EACH ROW
+EXECUTE FUNCTION set_archived_at_from_date_time();
+
+DROP TRIGGER IF EXISTS trg_appointments_archived_at ON appointments;
+CREATE TRIGGER trg_appointments_archived_at
+BEFORE INSERT OR UPDATE ON appointments
+FOR EACH ROW
+EXECUTE FUNCTION set_archived_at_from_date_time();

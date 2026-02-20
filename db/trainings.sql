@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS trainings (
   image_url TEXT,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  visible_until TIMESTAMPTZ,
+  archived_at TIMESTAMPTZ
 );
 
 -- Create training_registrations table
@@ -188,3 +190,23 @@ CREATE POLICY "Admins can delete training images"
     bucket_id = 'trainings' AND
     is_admin(get_user_email())
   );
+
+-- ============================================
+-- ARCHIVING TRIGGERS
+-- ============================================
+
+-- Create function and trigger for trainings
+CREATE OR REPLACE FUNCTION set_archived_at_from_end_date()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Generate archived_at from end_date_time + 12 hours
+  NEW.archived_at = NEW.end_date_time + interval '12 hours';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_trainings_archived_at ON trainings;
+CREATE TRIGGER trg_trainings_archived_at
+BEFORE INSERT OR UPDATE ON trainings
+FOR EACH ROW
+EXECUTE FUNCTION set_archived_at_from_end_date();

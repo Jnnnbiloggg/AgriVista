@@ -19,6 +19,8 @@ export interface Training {
   created_by: string | null
   created_at: string
   updated_at: string
+  visible_until: string | null
+  archived_at?: string | null
   confirmed_count?: number
   user_registration_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
@@ -62,6 +64,8 @@ export const useTrainings = () => {
   const trainingsSearchQuery = ref('')
   const registrationsSearchQuery = ref('')
 
+  const showArchivedTrainings = ref(false)
+
   let trainingsChannel: RealtimeChannel | null = null
   let registrationsChannel: RealtimeChannel | null = null
 
@@ -89,6 +93,19 @@ export const useTrainings = () => {
       const to = from + limit - 1
 
       let query = supabase.from('trainings').select('*', { count: 'exact' })
+
+      // Handle visibility and archiving based on role
+      const now = new Date().toISOString()
+
+      if (authStore.isAdmin) {
+        if (!showArchivedTrainings.value) {
+          query = query.filter('archived_at', 'gt', now).or('archived_at.is.null')
+        }
+      } else {
+        // For regular users, only show published and unarchived items
+        query = query.filter('archived_at', 'gt', now).or('archived_at.is.null')
+        query = query.filter('visible_until', 'gt', now).or('visible_until.is.null')
+      }
 
       // Apply search filter if exists
       if (trainingsSearchQuery.value) {
@@ -594,6 +611,7 @@ export const useTrainings = () => {
     itemsPerPage,
     trainingsTotalPages,
     registrationsTotalPages,
+    showArchivedTrainings,
     // Trainings
     fetchTrainings,
     loadMoreTrainings,

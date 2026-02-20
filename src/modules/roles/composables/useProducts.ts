@@ -60,6 +60,7 @@ export const useProducts = () => {
   const itemsPerPage = ref(10)
   const productsSearchQuery = ref('')
   const ordersSearchQuery = ref('')
+  const ordersStatusFilter = ref<string>('All')
 
   let productsChannel: RealtimeChannel | null = null
   let ordersChannel: RealtimeChannel | null = null
@@ -321,6 +322,11 @@ export const useProducts = () => {
         query = query.or(
           `product_name.ilike.%${ordersSearchQuery.value}%,buyer_name.ilike.%${ordersSearchQuery.value}%,buyer_email.ilike.%${ordersSearchQuery.value}%`,
         )
+      }
+
+      // Status filter
+      if (ordersStatusFilter.value && ordersStatusFilter.value !== 'All') {
+        query = query.eq('order_status', ordersStatusFilter.value.toLowerCase())
       }
 
       const { data, error: fetchError, count } = await query
@@ -611,6 +617,7 @@ export const useProducts = () => {
     itemsPerPage,
     productsSearchQuery,
     ordersSearchQuery,
+    ordersStatusFilter,
     productsTotalPages,
     ordersTotalPages,
 

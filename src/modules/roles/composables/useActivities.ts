@@ -14,11 +14,14 @@ export interface Activity {
   type: string
   capacity: number
   location: string
+  duration?: string | null
   date: string
   time: string
   created_by: string | null
   created_at: string
   updated_at: string
+  visible_until: string | null
+  archived_at: string | null
   confirmed_count?: number
   user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
@@ -34,6 +37,7 @@ export interface Booking {
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
+  activities?: { date: string; time: string } | null
 }
 
 export interface Appointment {
@@ -49,6 +53,7 @@ export interface Appointment {
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
+  archived_at: string | null
 }
 
 export interface PaginationOptions {
@@ -82,6 +87,9 @@ export const useActivities = () => {
   const bookingsSearchQuery = ref('')
   const appointmentsSearchQuery = ref('')
 
+  const showArchivedActivities = ref(false)
+  const showArchivedAppointments = ref(false)
+
   let activitiesChannel: RealtimeChannel | null = null
   let bookingsChannel: RealtimeChannel | null = null
   let appointmentsChannel: RealtimeChannel | null = null
@@ -113,6 +121,19 @@ export const useActivities = () => {
         .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(from, to)
+
+      const now = new Date().toISOString()
+      if (authStore.isAdmin) {
+        if (showArchivedActivities.value) {
+          query = query.lte('archived_at', now)
+        } else {
+          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        }
+      } else {
+        // Users should only see unarchived AND visible activities
+        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        query = query.or(`visible_until.gt.${now},visible_until.is.null`)
+      }
 
       // Search functionality
       if (activitiesSearchQuery.value) {
@@ -191,7 +212,10 @@ export const useActivities = () => {
   }
 
   const createActivity = async (
-    activity: Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by'>,
+    activity: Omit<
+      Activity,
+      'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at' | 'visible_until'
+    >,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -204,12 +228,31 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
+      // Calculate visible_until
+      let visible_until: string | null = null
+      if (activity.duration && activity.duration.toLowerCase() !== 'infinite') {
+        const match = activity.duration.match(/^(\d+)\s*(\w+)$/)
+        if (match) {
+          const num = parseInt(match[1])
+          const unit = match[2].toLowerCase()
+          const dateObj = new Date()
+          if (unit === 'minutes') dateObj.setMinutes(dateObj.getMinutes() + num)
+          else if (unit === 'hours') dateObj.setHours(dateObj.getHours() + num)
+          else if (unit === 'days') dateObj.setDate(dateObj.getDate() + num)
+          else if (unit === 'weeks') dateObj.setDate(dateObj.getDate() + num * 7)
+          else if (unit === 'months') dateObj.setMonth(dateObj.getMonth() + num)
+          else if (unit === 'years') dateObj.setFullYear(dateObj.getFullYear() + num)
+          visible_until = dateObj.toISOString()
+        }
+      }
+
       const { data, error: createError } = await supabase
         .from('activities')
         .insert([
           {
             ...activity,
             image_url: imageUrl,
+            visible_until,
             created_by: authStore.userId,
           },
         ])
@@ -231,7 +274,12 @@ export const useActivities = () => {
 
   const updateActivity = async (
     id: number,
-    updates: Partial<Omit<Activity, 'id' | 'created_at' | 'updated_at' | 'created_by'>>,
+    updates: Partial<
+      Omit<
+        Activity,
+        'id' | 'created_at' | 'updated_at' | 'created_by' | 'archived_at' | 'visible_until'
+      >
+    >,
     imageFile: File | null = null,
   ) => {
     loading.value = true
@@ -248,10 +296,33 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
+      // Calculate visible_until if duration is updated
+      let visible_until_update: { visible_until?: string | null } = {}
+      if (updates.duration) {
+        if (updates.duration.toLowerCase() === 'infinite') {
+          visible_until_update.visible_until = null
+        } else {
+          const match = updates.duration.match(/^(\d+)\s*(\w+)$/)
+          if (match) {
+            const num = parseInt(match[1])
+            const unit = match[2].toLowerCase()
+            const dateObj = new Date()
+            if (unit === 'minutes') dateObj.setMinutes(dateObj.getMinutes() + num)
+            else if (unit === 'hours') dateObj.setHours(dateObj.getHours() + num)
+            else if (unit === 'days') dateObj.setDate(dateObj.getDate() + num)
+            else if (unit === 'weeks') dateObj.setDate(dateObj.getDate() + num * 7)
+            else if (unit === 'months') dateObj.setMonth(dateObj.getMonth() + num)
+            else if (unit === 'years') dateObj.setFullYear(dateObj.getFullYear() + num)
+            visible_until_update.visible_until = dateObj.toISOString()
+          }
+        }
+      }
+
       const { data, error: updateError } = await supabase
         .from('activities')
         .update({
           ...updates,
+          ...visible_until_update,
           image_url: imageUrl,
         })
         .eq('id', id)
@@ -320,7 +391,7 @@ export const useActivities = () => {
 
       let query = supabase
         .from('bookings')
-        .select('*', { count: 'exact' })
+        .select('*, activities(date, time)', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(from, to)
 
@@ -464,9 +535,16 @@ export const useActivities = () => {
         .order('created_at', { ascending: false })
         .range(from, to)
 
-      // If user is not admin, only show their appointments
-      if (!authStore.isAdmin) {
+      const now = new Date().toISOString()
+      if (authStore.isAdmin) {
+        if (showArchivedAppointments.value) {
+          query = query.lte('archived_at', now)
+        } else {
+          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        }
+      } else {
         query = query.eq('user_id', authStore.userId)
+        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
       }
 
       // Search functionality
@@ -503,7 +581,7 @@ export const useActivities = () => {
   }
 
   const createAppointment = async (
-    appointment: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'user_id'>,
+    appointment: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'user_id' | 'archived_at'>,
   ) => {
     loading.value = true
     error.value = null
@@ -749,6 +827,8 @@ export const useActivities = () => {
     activitiesTotalPages,
     bookingsTotalPages,
     appointmentsTotalPages,
+    showArchivedActivities,
+    showArchivedAppointments,
 
     // Activities methods
     fetchActivities,

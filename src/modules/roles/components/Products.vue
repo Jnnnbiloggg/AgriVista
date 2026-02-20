@@ -9,7 +9,7 @@ import { useFormDialog } from '@/composables/useFormDialog'
 import { useImageHandler } from '@/composables/useImageHandler'
 import { useDeleteConfirmation } from '@/composables/useDeleteConfirmation'
 import { usePageActions } from '@/composables/usePageActions'
-import { formatDate } from '@/utils/formatters'
+import { formatDate, formatDateTime } from '@/utils/formatters'
 import HeaderActions from './shared/HeaderActions.vue'
 import AppSnackbar from '@/components/shared/AppSnackbar.vue'
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog.vue'
@@ -43,6 +43,7 @@ const {
   productsPage,
   ordersPage,
   itemsPerPage,
+  ordersStatusFilter,
   productsTotalPages,
   ordersTotalPages,
   fetchProducts,
@@ -441,6 +442,16 @@ const openUserDetail = (record: any) => {
   userDetailRecord.value = record
   showUserDetail.value = true
 }
+
+const canCancelOrder = (createdAt: string) => {
+  if (!createdAt) return false
+  const orderDate = new Date(createdAt)
+  const now = new Date()
+  const diffTime = now.getTime() - orderDate.getTime()
+  return diffTime / (1000 * 3600 * 24) <= 3
+}
+
+const orderStatusOptions = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancelled']
 </script>
 
 <template>
@@ -636,7 +647,15 @@ const openUserDetail = (record: any) => {
                         }}</v-chip>
                       </div>
                     </div>
-                    <div class="d-flex flex-column gap-2">
+                    <div class="d-flex flex-column gap-2" style="min-width: 200px">
+                      <v-select
+                        v-model="ordersStatusFilter"
+                        :items="orderStatusOptions"
+                        label="Status Filter"
+                        density="compact"
+                        hide-details
+                        @update:model-value="fetchOrders()"
+                      ></v-select>
                       <v-btn
                         color="success"
                         variant="elevated"
@@ -667,6 +686,16 @@ const openUserDetail = (record: any) => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
+                      <div style="width: 150px">
+                        <v-select
+                          v-model="ordersStatusFilter"
+                          :items="orderStatusOptions"
+                          label="Filter"
+                          density="compact"
+                          hide-details
+                          @update:model-value="fetchOrders()"
+                        ></v-select>
+                      </div>
                       <v-pagination
                         v-if="orders.length > 0"
                         v-model="ordersPage"
@@ -717,6 +746,10 @@ const openUserDetail = (record: any) => {
                     class="clickable-rows"
                     @click:row="(_: any, { item }: any) => openUserDetail(item)"
                   >
+                    <template v-slot:item.created_at="{ item }">
+                      {{ formatDateTime(item.created_at) }}
+                    </template>
+
                     <template v-slot:item.order_status="{ item }">
                       <v-chip :color="getStatusColor(item.order_status)" class="text-capitalize">
                         {{ item.order_status }}
@@ -883,53 +916,87 @@ const openUserDetail = (record: any) => {
             </v-card>
           </div>
 
-          <!-- Orders List -->
           <v-row v-else>
-            <v-col v-for="order in orders" :key="order.id" cols="12">
+            <v-col cols="12">
               <v-card>
-                <v-card-text>
-                  <v-row align="center">
-                    <v-col cols="12" sm="3">
-                      <div class="text-subtitle-1 font-weight-bold">{{ order.product_name }}</div>
-                      <div class="text-caption text-grey">Order #{{ order.id }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="2">
-                      <div class="text-caption text-grey">Quantity</div>
-                      <div class="text-body-1">{{ order.quantity }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="2">
-                      <div class="text-caption text-grey">Total Price</div>
-                      <div class="text-body-1 font-weight-bold text-primary">
-                        ₱{{ order.total_price }}
+                <v-card-title class="pa-4 pa-md-6">
+                  <div
+                    class="d-flex flex-column flex-md-row justify-space-between align-md-center gap-3"
+                  >
+                    <div class="d-flex align-center gap-2">
+                      <span class="text-h6 mb-0">My Orders</span>
+                      <v-chip v-if="ordersTotal > 0" color="primary" size="small">{{
+                        ordersTotal
+                      }}</v-chip>
+                    </div>
+                    <div class="d-flex flex-column flex-md-row align-md-center gap-2">
+                      <div style="min-width: 150px">
+                        <v-select
+                          v-model="ordersStatusFilter"
+                          :items="orderStatusOptions"
+                          label="Filter"
+                          density="compact"
+                          hide-details
+                          @update:model-value="fetchOrders()"
+                        ></v-select>
                       </div>
-                    </v-col>
-                    <v-col cols="12" sm="2">
-                      <div class="text-caption text-grey">Date Ordered</div>
-                      <div class="text-body-2">{{ formatDate(order.created_at) }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="2">
+                      <v-pagination
+                        v-if="orders.length > 0"
+                        v-model="ordersPage"
+                        :length="ordersTotalPages"
+                        :total-visible="3"
+                        size="small"
+                        rounded="circle"
+                        @update:model-value="goToOrdersPage"
+                      ></v-pagination>
+                    </div>
+                  </div>
+                </v-card-title>
+                <v-card-text>
+                  <v-data-table
+                    :headers="orderHeaders"
+                    :items="orders"
+                    item-value="id"
+                    hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item)"
+                  >
+                    <template v-slot:item.created_at="{ item }">
+                      {{ formatDateTime(item.created_at) }}
+                    </template>
+                    <template v-slot:item.total_price="{ item }">
+                      <div class="font-weight-bold text-primary">₱{{ item.total_price }}</div>
+                    </template>
+                    <template v-slot:item.order_status="{ item }">
                       <v-chip
-                        :color="getStatusColor(order.order_status)"
+                        :color="getStatusColor(item.order_status)"
                         size="small"
                         variant="tonal"
                       >
-                        {{ order.order_status.toUpperCase() }}
+                        {{ item.order_status.toUpperCase() }}
                       </v-chip>
-                    </v-col>
-                    <v-col cols="12" sm="1">
+                    </template>
+                    <template v-slot:item.actions="{ item }">
                       <v-btn
-                        v-if="order.order_status === 'pending'"
+                        v-if="item.order_status === 'pending'"
+                        :disabled="!canCancelOrder(item.created_at)"
                         icon="mdi-close-circle"
                         size="small"
                         color="error"
                         variant="text"
-                        @click="cancelUserOrder(order.id)"
+                        @click="cancelUserOrder(item.id)"
                       >
                         <v-icon>mdi-close-circle</v-icon>
-                        <v-tooltip activator="parent" location="top">Cancel Order</v-tooltip>
+                        <v-tooltip activator="parent" location="top">
+                          {{
+                            canCancelOrder(item.created_at)
+                              ? 'Cancel Order'
+                              : 'Cannot cancel after 3 days'
+                          }}
+                        </v-tooltip>
                       </v-btn>
-                    </v-col>
-                  </v-row>
+                    </template>
+                  </v-data-table>
                 </v-card-text>
               </v-card>
             </v-col>

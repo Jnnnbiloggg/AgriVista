@@ -61,6 +61,7 @@ const {
   deleteRegistration,
   goToRegistrationsPage,
   setupRealtimeSubscriptions,
+  showArchivedTrainings,
 } = useTrainings()
 
 // Infinite scroll for user trainings view
@@ -148,7 +149,6 @@ const {
 })
 
 // View filter and admin tab
-const viewFilter = ref<'in_progress' | 'completed'>('in_progress')
 const adminTab = computed({
   get: () => {
     const tab = route.query.tab as string
@@ -181,6 +181,7 @@ interface TrainingForm {
   location: string
   start_date_time: string
   end_date_time: string
+  visible_until: string
   capacity: number
   topics: string[]
 }
@@ -192,6 +193,7 @@ const trainingDialog = useFormDialog<TrainingForm>({
     location: '',
     start_date_time: '',
     end_date_time: '',
+    visible_until: '',
     capacity: 0,
     topics: [],
   },
@@ -225,6 +227,7 @@ const trainingDialog = useFormDialog<TrainingForm>({
             location: formData.location,
             start_date_time: formData.start_date_time,
             end_date_time: formData.end_date_time,
+            visible_until: formData.visible_until || null,
             capacity: formData.capacity,
             topics: formData.topics,
             image_url: imagePreview.value,
@@ -239,6 +242,7 @@ const trainingDialog = useFormDialog<TrainingForm>({
             location: formData.location,
             start_date_time: formData.start_date_time,
             end_date_time: formData.end_date_time,
+            visible_until: formData.visible_until || null,
             capacity: formData.capacity,
             topics: formData.topics,
             image_url: null,
@@ -279,18 +283,7 @@ onMounted(async () => {
   setupRealtimeSubscriptions()
 })
 
-// Computed filtered trainings
-const filteredTrainings = computed(() => {
-  const now = new Date()
-  return trainings.value.filter((training) => {
-    const startDate = new Date(training.start_date_time)
-    const endDate = new Date(training.end_date_time)
-
-    if (viewFilter.value === 'in_progress') return endDate >= now
-    if (viewFilter.value === 'completed') return endDate < now
-    return true
-  })
-})
+// Computed filtered trainings removed as per request
 
 // Format date and time
 const formatDateTime = (dateTime: string) => {
@@ -338,6 +331,7 @@ const handleEditTraining = (training: any) => {
     location: training.location,
     start_date_time: formatDateTimeLocal(training.start_date_time),
     end_date_time: formatDateTimeLocal(training.end_date_time),
+    visible_until: training.visible_until ? formatDateTimeLocal(training.visible_until) : '',
     capacity: training.capacity,
     topics: [...training.topics],
   })
@@ -345,6 +339,15 @@ const handleEditTraining = (training: any) => {
 
 const confirmDelete = (type: 'training' | 'registration', id: number) => {
   deleteConfirmation.openDialog({ type, id })
+}
+
+const canCancelRegistration = (start_date_time: string) => {
+  if (!start_date_time) return false
+  const startDate = new Date(start_date_time)
+  const now = new Date()
+  const timeDifferenceMs = startDate.getTime() - now.getTime()
+  const daysDifference = timeDifferenceMs / (1000 * 60 * 60 * 24)
+  return daysDifference >= 3
 }
 
 const pageTitle = computed(() =>
@@ -633,6 +636,15 @@ const cancelUserRegistration = async (registrationId: number) => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
+                      <v-switch
+                        v-model="showArchivedTrainings"
+                        label="Show Archived"
+                        color="primary"
+                        hide-details
+                        density="compact"
+                        class="mr-2"
+                        @change="fetchTrainings()"
+                      ></v-switch>
                       <v-pagination
                         v-if="trainings.length > 0"
                         v-model="trainingsPage"
@@ -915,22 +927,6 @@ const cancelUserRegistration = async (registrationId: number) => {
       <v-window v-model="userTab">
         <!-- Browse Trainings Tab -->
         <v-window-item value="browse">
-          <!-- Filter Buttons -->
-          <v-row class="mb-4">
-            <v-col cols="12">
-              <v-btn-toggle
-                v-model="viewFilter"
-                color="primary"
-                variant="outlined"
-                mandatory
-                style="gap: 8px"
-              >
-                <v-btn value="in_progress" style="flex: 1">In Progress</v-btn>
-                <v-btn value="completed" style="flex: 1">Completed</v-btn>
-              </v-btn-toggle>
-            </v-col>
-          </v-row>
-
           <!-- Loading State -->
           <div v-if="loading" class="text-center py-12">
             <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
@@ -938,12 +934,10 @@ const cancelUserRegistration = async (registrationId: number) => {
           </div>
 
           <!-- Empty State -->
-          <div v-else-if="filteredTrainings.length === 0" class="text-center py-12">
+          <div v-else-if="trainings.length === 0" class="text-center py-12">
             <v-card class="pa-12">
               <v-icon icon="mdi-school-outline" size="120" color="grey-lighten-1"></v-icon>
-              <div class="text-h5 text-grey-darken-1 mt-6">
-                No {{ viewFilter === 'in_progress' ? 'in progress' : 'completed' }} trainings
-              </div>
+              <div class="text-h5 text-grey-darken-1 mt-6">No trainings available</div>
               <div class="text-body-1 text-grey mt-2">
                 Check back later for new training sessions
               </div>
@@ -952,7 +946,7 @@ const cancelUserRegistration = async (registrationId: number) => {
 
           <!-- Training Cards -->
           <v-row v-else>
-            <v-col v-for="training in filteredTrainings" :key="training.id" cols="12" sm="6" md="4">
+            <v-col v-for="training in trainings" :key="training.id" cols="12" sm="6" md="4">
               <v-card
                 class="fill-height training-card"
                 @click="!isTrainingCompleted(training) && openRegisterDialog(training)"
@@ -1041,7 +1035,7 @@ const cancelUserRegistration = async (registrationId: number) => {
           </v-row>
 
           <!-- Loading More Indicator -->
-          <v-row v-if="isLoadingMore && filteredTrainings.length > 0" class="mt-4">
+          <v-row v-if="isLoadingMore && trainings.length > 0" class="mt-4">
             <v-col cols="12" class="text-center">
               <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
               <p class="text-body-2 text-grey-darken-1 mt-2">Loading more trainings...</p>
@@ -1053,7 +1047,7 @@ const cancelUserRegistration = async (registrationId: number) => {
             v-if="
               !loading &&
               !isLoadingMore &&
-              filteredTrainings.length > 0 &&
+              trainings.length > 0 &&
               trainingsPage >= trainingsTotalPages
             "
             class="mt-4"
@@ -1067,22 +1061,6 @@ const cancelUserRegistration = async (registrationId: number) => {
 
         <!-- My Registrations Tab -->
         <v-window-item value="myRegistrations">
-          <!-- Filter Buttons -->
-          <v-row class="mb-4">
-            <v-col cols="12">
-              <v-btn-toggle
-                v-model="viewFilter"
-                color="primary"
-                variant="outlined"
-                mandatory
-                style="gap: 8px"
-              >
-                <v-btn value="in_progress" style="flex: 1">In Progress</v-btn>
-                <v-btn value="completed" style="flex: 1">Completed</v-btn>
-              </v-btn-toggle>
-            </v-col>
-          </v-row>
-
           <!-- Loading State -->
           <div v-if="loading" class="text-center py-12">
             <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
@@ -1106,52 +1084,66 @@ const cancelUserRegistration = async (registrationId: number) => {
 
           <!-- Registrations List -->
           <v-row v-else>
-            <v-col
-              v-for="registration in registrations.filter((r) => {
-                const training = trainings.find((t) => t.id === r.training_id)
-                if (!training) return false
-                const isCompleted = isTrainingCompleted(training)
-                return viewFilter === 'in_progress' ? !isCompleted : isCompleted
-              })"
-              :key="registration.id"
-              cols="12"
-            >
+            <v-col cols="12">
               <v-card>
                 <v-card-text>
-                  <v-row align="center">
-                    <v-col cols="12" sm="4">
-                      <div class="text-subtitle-1 font-weight-bold">
-                        {{ registration.training_name }}
-                      </div>
-                      <div class="text-caption text-grey">Registration #{{ registration.id }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="3">
-                      <div class="text-caption text-grey">Registered On</div>
-                      <div class="text-body-2">{{ formatDate(registration.created_at) }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="2">
-                      <v-chip
-                        :color="getStatusColor(registration.status)"
-                        size="small"
-                        variant="tonal"
-                      >
-                        {{ registration.status.toUpperCase() }}
+                  <!-- Registrations Table -->
+                  <v-data-table
+                    :headers="registrationHeaders"
+                    :items="registrations"
+                    item-value="id"
+                    hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item)"
+                  >
+                    <template v-slot:item.created_at="{ item }">
+                      {{ new Date(item.created_at).toLocaleDateString() }}
+                    </template>
+
+                    <template v-slot:item.status="{ item }">
+                      <v-chip :color="getStatusColor(item.status)" size="small" variant="tonal">
+                        {{ item.status }}
                       </v-chip>
-                    </v-col>
-                    <v-col cols="12" sm="3">
+                    </template>
+
+                    <template v-slot:item.actions="{ item }">
                       <v-btn
-                        v-if="registration.status === 'pending'"
+                        v-if="item.status !== 'cancelled'"
+                        :disabled="
+                          !canCancelRegistration(
+                            trainings.find((t) => t.id === item.training_id)?.start_date_time || '',
+                          )
+                        "
                         icon="mdi-close-circle"
                         size="small"
                         color="error"
                         variant="text"
-                        @click="cancelUserRegistration(registration.id)"
+                        @click.stop="cancelUserRegistration(item.id)"
                       >
                         <v-icon>mdi-close-circle</v-icon>
-                        <v-tooltip activator="parent" location="top">Cancel Registration</v-tooltip>
+                        <v-tooltip activator="parent" location="top">
+                          {{
+                            canCancelRegistration(
+                              trainings.find((t) => t.id === item.training_id)?.start_date_time ||
+                                '',
+                            )
+                              ? 'Cancel Registration'
+                              : 'Cannot cancel within 3 days'
+                          }}
+                        </v-tooltip>
                       </v-btn>
-                    </v-col>
-                  </v-row>
+                    </template>
+                  </v-data-table>
+
+                  <div class="d-flex justify-center mt-4" v-if="registrationsTotalPages > 1">
+                    <v-pagination
+                      v-model="registrationsPage"
+                      :length="registrationsTotalPages"
+                      :total-visible="5"
+                      rounded="circle"
+                      @update:model-value="goToRegistrationsPage"
+                    ></v-pagination>
+                  </div>
                 </v-card-text>
               </v-card>
             </v-col>
@@ -1205,7 +1197,7 @@ const cancelUserRegistration = async (registrationId: number) => {
               ></v-text-field>
             </v-col>
 
-            <v-col cols="12" sm="6">
+            <v-col cols="12" sm="4">
               <v-text-field
                 v-model="trainingDialog.formData.value.start_date_time"
                 label="Start Date & Time *"
@@ -1215,13 +1207,24 @@ const cancelUserRegistration = async (registrationId: number) => {
               ></v-text-field>
             </v-col>
 
-            <v-col cols="12" sm="6">
+            <v-col cols="12" sm="4">
               <v-text-field
                 v-model="trainingDialog.formData.value.end_date_time"
                 label="End Date & Time *"
                 type="datetime-local"
                 variant="outlined"
                 required
+              ></v-text-field>
+            </v-col>
+
+            <v-col cols="12" sm="4">
+              <v-text-field
+                v-model="trainingDialog.formData.value.visible_until"
+                label="Visible Until"
+                type="datetime-local"
+                variant="outlined"
+                hint="Date until users can browse this training"
+                persistent-hint
               ></v-text-field>
             </v-col>
 

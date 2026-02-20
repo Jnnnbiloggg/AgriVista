@@ -99,6 +99,13 @@ Google OAuth is available for **regular users only** (admins must sign in with e
   - `db/products.sql`: schema / seeds for product listings
   - `db/trainings.sql`: schema / seeds for training events
 
+## Recent Updates
+
+- **Activities Module:** Added durations and 12-hour auto-archiving for activities and appointments. Upgraded "My Bookings" and "My Appointments" to use paginated data tables with user detail modals. Enforced a 3-day cancellation policy for both.
+- **Products Module:** Upgraded "My Orders" to use a paginated data table. Added status filters for order management. Enforced a 3-day cancellation policy for orders and formatting fixes for date.
+- **Trainings Module:** Added duration/visibility settings and 12-hour auto-archiving. Enforced a 3-day cancellation policy for registrations and overhauled "My Registrations" with a paginated data table. Removed unnecessary filtering toggles.
+- **Announcements Module:** Introduced an "infinite" duration option for announcements.
+
 ## Where to Look in the Code
 
 - **Notification UI:** `src/components/shared/NotificationMenu.vue` and `src/components/shared/AppSnackbar.vue`.

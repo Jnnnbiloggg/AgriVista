@@ -72,6 +72,8 @@ const {
   deleteAppointment,
   goToAppointmentsPage,
   setupRealtimeSubscriptions,
+  showArchivedActivities,
+  showArchivedAppointments,
 } = useActivities()
 
 // Infinite scroll for user activities view
@@ -149,6 +151,21 @@ const { imageFile, imagePreview, handleImageSelect, removeImage } = useImageHand
   maxSizeInMB: 5,
   allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
 })
+
+// Separate duration fields for better UX
+const durationNumber = ref<number | null>(null)
+const durationUnit = ref<string>('')
+
+// Duration units options
+const durationUnits = [
+  { title: 'Minutes', value: 'minutes' },
+  { title: 'Hours', value: 'hours' },
+  { title: 'Days', value: 'days' },
+  { title: 'Weeks', value: 'weeks' },
+  { title: 'Months', value: 'months' },
+  { title: 'Years', value: 'years' },
+  { title: 'Infinite', value: 'infinite' },
+]
 
 // Admin tab
 const adminTab = computed({
@@ -310,6 +327,7 @@ const activityDialog = useFormDialog<{
   location: string
   date: string
   time: string
+  duration?: string | null
   image_url?: string | null
   id?: number
 }>({
@@ -321,6 +339,7 @@ const activityDialog = useFormDialog<{
     location: '',
     date: '',
     time: '',
+    duration: '',
     image_url: null,
   }),
   validate: (data) => {
@@ -335,14 +354,25 @@ const activityDialog = useFormDialog<{
     ) {
       return { valid: false, message: 'Please fill in all required fields' }
     }
+    if (durationUnit.value !== 'infinite' && (!durationNumber.value || !durationUnit.value)) {
+      return { valid: false, message: 'Please specify duration with number and unit' }
+    }
     return { valid: true }
   },
   onSubmit: async (data, isEditing): Promise<{ success: boolean; error?: string }> => {
     let result
+    const duration =
+      durationUnit.value === 'infinite'
+        ? 'Infinite'
+        : `${durationNumber.value} ${durationUnit.value}`
+    const payload = { ...data, duration }
     if (isEditing && data.id) {
-      result = await updateActivity(data.id, { ...data }, imageFile.value)
+      result = await updateActivity(data.id, { ...payload }, imageFile.value)
     } else {
-      result = await createActivity({ ...data, image_url: data.image_url ?? null }, imageFile.value)
+      result = await createActivity(
+        { ...payload, image_url: payload.image_url ?? null },
+        imageFile.value,
+      )
     }
     return {
       success: result.success,
@@ -352,6 +382,26 @@ const activityDialog = useFormDialog<{
   onOpen: () => {
     imageFile.value = null
     imagePreview.value = activityDialog.editingItem.value?.image_url || null
+
+    if (activityDialog.editingItem.value && activityDialog.editingItem.value.duration) {
+      const durationMatch =
+        activityDialog.editingItem.value.duration.toLowerCase() === 'infinite'
+          ? null
+          : activityDialog.editingItem.value.duration.match(/^(\d+)\s*(\w+)$/)
+      if (durationMatch) {
+        durationNumber.value = parseInt(durationMatch[1])
+        durationUnit.value = durationMatch[2].toLowerCase()
+      } else if (activityDialog.editingItem.value.duration.toLowerCase() === 'infinite') {
+        durationNumber.value = null
+        durationUnit.value = 'infinite'
+      } else {
+        durationNumber.value = null
+        durationUnit.value = ''
+      }
+    } else {
+      durationNumber.value = null
+      durationUnit.value = ''
+    }
   },
   showSnackbar,
   successMessage: {
@@ -508,6 +558,20 @@ const cancelUserBooking = async (bookingId: number) => {
   }
 }
 
+const cancelUserAppointment = async (appointmentId: number) => {
+  try {
+    const result = await updateAppointment(appointmentId, { status: 'cancelled' })
+    if (result.success) {
+      showSnackbar('Appointment cancelled successfully!', 'success')
+      await fetchAppointments()
+    } else {
+      showSnackbar(result.error || 'Failed to cancel appointment', 'error')
+    }
+  } catch (err: any) {
+    showSnackbar(err.message || 'An error occurred', 'error')
+  }
+}
+
 const activityHeaders = [
   { title: 'Activity', key: 'name' },
   { title: 'Type', key: 'type' },
@@ -544,6 +608,14 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
   userDetailRecord.value = record
   userDetailType.value = type
   showUserDetail.value = true
+}
+
+const canCancel = (dateStr?: string, timeStr?: string) => {
+  if (!dateStr || !timeStr) return false
+  const activityDateTime = new Date(`${dateStr}T${timeStr}`)
+  const now = new Date()
+  const diffTime = activityDateTime.getTime() - now.getTime()
+  return diffTime / (1000 * 3600 * 24) >= 3
 }
 </script>
 
@@ -723,50 +795,43 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
             </v-card>
           </div>
 
-          <!-- Bookings List -->
-          <v-row v-else>
-            <v-col v-for="booking in bookings" :key="booking.id" cols="12">
-              <v-card>
-                <v-card-text>
-                  <v-row align="center">
-                    <v-col cols="12" sm="4">
-                      <div class="text-subtitle-1 font-weight-bold">
-                        {{ booking.activity_name }}
-                      </div>
-                      <div class="text-caption text-grey">Booking #{{ booking.id }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="3">
-                      <div class="text-caption text-grey">Date Booked</div>
-                      <div class="text-body-2">{{ formatDate(booking.booking_date) }}</div>
-                    </v-col>
-                    <v-col cols="12" sm="3">
-                      <v-chip
-                        :color="getStatusColor(booking.status)"
-                        size="small"
-                        variant="tonal"
-                        class="text-capitalize"
-                      >
-                        {{ booking.status }}
-                      </v-chip>
-                    </v-col>
-                    <v-col cols="12" sm="2" class="text-right">
-                      <v-btn
-                        v-if="booking.status === 'pending'"
-                        icon="mdi-close-circle"
-                        size="small"
-                        color="error"
-                        variant="text"
-                        @click="cancelUserBooking(booking.id)"
-                      >
-                        <v-icon>mdi-close-circle</v-icon>
-                        <v-tooltip activator="parent" location="top">Cancel Booking</v-tooltip>
-                      </v-btn>
-                    </v-col>
-                  </v-row>
-                </v-card-text>
-              </v-card>
-            </v-col>
-          </v-row>
+          <!-- Data Table -->
+          <v-data-table
+            v-else
+            :headers="bookingHeaders"
+            :items="bookings"
+            item-value="id"
+            hide-default-footer
+            class="clickable-rows"
+            @click:row="(_: any, { item }: any) => openUserDetail(item, 'booking')"
+          >
+            <template v-slot:item.status="{ item }">
+              <v-chip :color="getStatusColor(item.status)" size="small" variant="tonal">
+                {{ item.status }}
+              </v-chip>
+            </template>
+
+            <template v-slot:item.actions="{ item }">
+              <v-btn
+                v-if="item.status !== 'cancelled'"
+                :disabled="!canCancel(item.activities?.date, item.activities?.time)"
+                icon="mdi-close-circle"
+                size="small"
+                color="error"
+                variant="text"
+                @click.stop="cancelUserBooking(item.id)"
+              >
+                <v-icon>mdi-close-circle</v-icon>
+                <v-tooltip activator="parent" location="top">
+                  {{
+                    canCancel(item.activities?.date, item.activities?.time)
+                      ? 'Cancel Booking'
+                      : 'Cannot cancel within 3 days of activity'
+                  }}
+                </v-tooltip>
+              </v-btn>
+            </template>
+          </v-data-table>
 
           <div v-if="bookingsTotalPages > 1" class="d-flex justify-center mt-4">
             <v-pagination
@@ -826,64 +891,60 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                     </p>
                   </div>
 
-                  <!-- Appointments List -->
-                  <div v-else>
-                    <v-list>
-                      <v-list-item
-                        v-for="appointment in appointments"
-                        :key="appointment.id"
-                        class="mb-2 rounded-lg"
-                        border
+                  <!-- Data Table -->
+                  <v-data-table
+                    v-else
+                    :headers="appointmentHeaders"
+                    :items="appointments"
+                    item-value="id"
+                    hide-default-footer
+                    class="clickable-rows"
+                    @click:row="(_: any, { item }: any) => openUserDetail(item, 'appointment')"
+                  >
+                    <template v-slot:item.date="{ item }">
+                      <div>
+                        <div>{{ formatDate(item.date) }}</div>
+                        <div class="text-caption">{{ formatTime(item.time) }}</div>
+                      </div>
+                    </template>
+
+                    <template v-slot:item.status="{ item }">
+                      <v-chip :color="getStatusColor(item.status)" size="small" variant="tonal">
+                        {{ item.status }}
+                      </v-chip>
+                    </template>
+
+                    <template v-slot:item.actions="{ item }">
+                      <v-btn
+                        v-if="item.status !== 'cancelled'"
+                        :disabled="!canCancel(item.date, item.time)"
+                        icon="mdi-close-circle"
+                        size="small"
+                        color="error"
+                        variant="text"
+                        @click.stop="cancelUserAppointment(item.id)"
                       >
-                        <template v-slot:prepend>
-                          <v-avatar :color="getStatusColor(appointment.status)" class="mr-3">
-                            <v-icon icon="mdi-calendar"></v-icon>
-                          </v-avatar>
-                        </template>
+                        <v-icon>mdi-close-circle</v-icon>
+                        <v-tooltip activator="parent" location="top">
+                          {{
+                            canCancel(item.date, item.time)
+                              ? 'Cancel Appointment'
+                              : 'Cannot cancel within 3 days'
+                          }}
+                        </v-tooltip>
+                      </v-btn>
+                    </template>
+                  </v-data-table>
 
-                        <v-list-item-title class="font-weight-medium">
-                          {{ appointment.appointment_type }}
-                        </v-list-item-title>
-
-                        <v-list-item-subtitle>
-                          <div class="mt-1">
-                            <div>
-                              <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
-                              {{ formatDate(appointment.date) }} at
-                              {{ formatTime(appointment.time) }}
-                            </div>
-                            <div class="mt-1">
-                              <v-icon icon="mdi-phone" size="small" class="mr-1"></v-icon>
-                              {{ appointment.contact_number }}
-                            </div>
-                            <div v-if="appointment.note" class="mt-1 text-caption">
-                              {{ appointment.note }}
-                            </div>
-                          </div>
-                        </v-list-item-subtitle>
-
-                        <template v-slot:append>
-                          <v-chip
-                            :color="getStatusColor(appointment.status)"
-                            size="small"
-                            variant="tonal"
-                          >
-                            {{ appointment.status }}
-                          </v-chip>
-                        </template>
-                      </v-list-item>
-                    </v-list>
-
-                    <!-- Pagination -->
-                    <div v-if="appointmentsTotalPages > 1" class="d-flex justify-center mt-4">
-                      <v-pagination
-                        v-model="appointmentsPage"
-                        :length="appointmentsTotalPages"
-                        :total-visible="5"
-                        rounded="circle"
-                        @update:model-value="goToAppointmentsPage"
-                      ></v-pagination>
-                    </div>
+                  <!-- Pagination -->
+                  <div v-if="appointmentsTotalPages > 1" class="d-flex justify-center mt-4">
+                    <v-pagination
+                      v-model="appointmentsPage"
+                      :length="appointmentsTotalPages"
+                      :total-visible="5"
+                      rounded="circle"
+                      @update:model-value="goToAppointmentsPage"
+                    ></v-pagination>
                   </div>
                 </v-card-text>
               </v-card>
@@ -920,6 +981,17 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                     </div>
                     <div class="d-flex flex-column gap-2">
                       <v-btn
+                        :color="showArchivedActivities ? 'secondary' : 'grey'"
+                        variant="tonal"
+                        block
+                        @click="
+                          showArchivedActivities = !showArchivedActivities;
+                          fetchActivities();
+                        "
+                      >
+                        {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
+                      </v-btn>
+                      <v-btn
                         color="primary"
                         prepend-icon="mdi-plus"
                         block
@@ -948,6 +1020,16 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
+                      <v-btn
+                        :color="showArchivedActivities ? 'secondary' : 'grey'"
+                        variant="tonal"
+                        @click="
+                          showArchivedActivities = !showArchivedActivities;
+                          fetchActivities();
+                        "
+                      >
+                        {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
+                      </v-btn>
                       <v-pagination
                         v-if="activities.length > 0"
                         v-model="activitiesPage"
@@ -1203,6 +1285,17 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                     </div>
                     <div class="d-flex flex-column gap-2">
                       <v-btn
+                        :color="showArchivedAppointments ? 'secondary' : 'grey'"
+                        variant="tonal"
+                        block
+                        @click="
+                          showArchivedAppointments = !showArchivedAppointments;
+                          fetchAppointments();
+                        "
+                      >
+                        {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
+                      </v-btn>
+                      <v-btn
                         color="success"
                         variant="elevated"
                         prepend-icon="mdi-download"
@@ -1232,6 +1325,16 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
+                      <v-btn
+                        :color="showArchivedAppointments ? 'secondary' : 'grey'"
+                        variant="tonal"
+                        @click="
+                          showArchivedAppointments = !showArchivedAppointments;
+                          fetchAppointments();
+                        "
+                      >
+                        {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
+                      </v-btn>
                       <v-pagination
                         v-if="appointments.length > 0"
                         v-model="appointmentsPage"
@@ -1596,6 +1699,37 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
                   type="time"
                   variant="outlined"
                   required
+                ></v-text-field>
+              </v-col>
+
+              <!-- Duration Section -->
+              <v-col cols="12" class="pb-0">
+                <v-label class="text-subtitle-2 mb-2">Duration *</v-label>
+              </v-col>
+              <v-col cols="6">
+                <v-select
+                  v-model="durationUnit"
+                  label="Unit"
+                  placeholder="Select unit"
+                  variant="outlined"
+                  density="comfortable"
+                  :items="durationUnits"
+                  :rules="[(v: any) => !!v || 'Unit is required']"
+                ></v-select>
+              </v-col>
+              <v-col cols="6" v-if="durationUnit !== 'infinite'">
+                <v-text-field
+                  v-model.number="durationNumber"
+                  label="Number"
+                  placeholder="e.g., 3"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  min="1"
+                  :rules="[
+                    (v: any) => !!v || 'Number is required',
+                    (v: any) => v > 0 || 'Must be greater than 0',
+                  ]"
                 ></v-text-field>
               </v-col>
             </v-row>
