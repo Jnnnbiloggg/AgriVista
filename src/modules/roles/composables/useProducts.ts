@@ -411,38 +411,61 @@ export const useProducts = () => {
     error.value = null
 
     try {
-      // If completing an order, check stock and decrement
-      if (updates.order_status === 'completed') {
-        // Get the order details
+      // Handle stock adjustments when order status changes
+      if (updates.order_status) {
+        // Retrieve existing order details including current status
         const { data: orderData, error: orderError } = await supabase
           .from('orders')
-          .select('product_id, quantity')
+          .select('product_id, quantity, order_status')
           .eq('id', id)
           .single()
 
         if (orderError) throw orderError
 
-        // Get current product stock
-        const { data: productData, error: productError } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', orderData.product_id)
-          .single()
+        const prevStatus = orderData.order_status
+        const newStatus = updates.order_status
 
-        if (productError) throw productError
+        // function to adjust stock by a delta (positive or negative)
+        const adjustStock = async (delta: number) => {
+          const { data: productData, error: productError } = await supabase
+            .from('products')
+            .select('stock')
+            .eq('id', orderData.product_id)
+            .single()
 
-        // Check if there's enough stock
-        if (productData.stock < orderData.quantity) {
-          throw new Error('Insufficient stock to complete this order')
+          if (productError) throw productError
+
+          const newStock = (productData.stock || 0) + delta
+          if (newStock < 0) {
+            throw new Error('Insufficient stock to adjust for this order')
+          }
+
+          const { error: stockError } = await supabase
+            .from('products')
+            .update({ stock: newStock })
+            .eq('id', orderData.product_id)
+
+          if (stockError) throw stockError
         }
 
-        // Decrement stock
-        const { error: stockError } = await supabase
-          .from('products')
-          .update({ stock: productData.stock - orderData.quantity })
-          .eq('id', orderData.product_id)
+        // Decrement stock when an order is confirmed (and wasn't confirmed/completed before)
+        if (newStatus === 'confirmed' && prevStatus !== 'confirmed' && prevStatus !== 'completed') {
+          await adjustStock(-orderData.quantity)
+        }
 
-        if (stockError) throw stockError
+        // If order gets cancelled after being confirmed, restore stock
+        if (
+          newStatus === 'cancelled' &&
+          (prevStatus === 'confirmed' || prevStatus === 'completed')
+        ) {
+          await adjustStock(orderData.quantity)
+        }
+
+        // Previously we only decremented on completed; keep this for any edge cases where
+        // a user might skip straight to completed from pending.
+        if (newStatus === 'completed' && prevStatus !== 'completed' && prevStatus !== 'confirmed') {
+          await adjustStock(-orderData.quantity)
+        }
       }
 
       const { data, error: updateError } = await supabase
