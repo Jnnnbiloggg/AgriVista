@@ -70,10 +70,10 @@ CREATE POLICY "Users can update own feedbacks"
   ON feedbacks FOR UPDATE
   USING (user_id = auth.uid());
 
--- Admins can view all feedbacks (but cannot update is_public)
-CREATE POLICY "Admins cannot update feedbacks"
+-- Admins can update all feedbacks
+CREATE POLICY "Admins can update all feedbacks"
   ON feedbacks FOR UPDATE
-  USING (false);
+  USING (is_admin(get_user_email()));
 
 -- Users can delete their own feedbacks
 CREATE POLICY "Users can delete own feedbacks"

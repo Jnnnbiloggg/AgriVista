@@ -103,12 +103,12 @@ Google OAuth is available for **regular users only** (admins must sign in with e
 
 ### Archiving & Visibility (simplified per-module model)
 
-| Module            | Mechanism                             | How it works                                                                                        |
-| ----------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Activities**    | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                        |
-| **Appointments**  | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                        |
-| **Trainings**     | `archived_at` (auto)                  | Calculated via DB trigger: `end_date_time + 12 hours`. No manual input needed.                      |
-| **Announcements** | `visible_until` (from duration input) | Admin sets a duration (e.g. "3 days", "Infinite"). `visible_until` is calculated from the duration. |
+| Module            | Mechanism                             | How it works                                                                                                                   |
+| ----------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Activities**    | `archived_at` (auto)                  | Calculated via DB trigger: uses `end_date + end_time` if provided, otherwise `date + time + 12 hours`. No manual input needed. |
+| **Appointments**  | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                                                   |
+| **Trainings**     | `archived_at` (auto)                  | Calculated via DB trigger: `end_date_time + 12 hours`. No manual input needed.                                                 |
+| **Announcements** | `visible_until` (from duration input) | Admin sets a duration (e.g. "3 days", "Infinite"). `visible_until` is calculated from the duration.                            |
 
 - Admins can toggle **Show Archived** to view past items.
 - Regular users only see unarchived (current) items.

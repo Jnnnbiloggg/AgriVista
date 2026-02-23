@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { supabase } from '../../../../utils/supabase'
 
 interface NavigationItem {
   title: string
@@ -16,6 +17,9 @@ const emit = defineEmits<{
 }>()
 
 const email = ref('')
+const isSubscribing = ref(false)
+const subscriptionMessage = ref('')
+const showMessage = ref(false)
 
 const handleNavigation = (item: NavigationItem) => {
   if (item.route) {
@@ -27,10 +31,68 @@ const handleNavigation = (item: NavigationItem) => {
   }
 }
 
-const handleSubscribe = () => {
-  if (email.value) {
-    // TODO: Implement newsletter subscription logic
+const handleSubscribe = async () => {
+  if (!email.value || !email.value.includes('@')) {
+    subscriptionMessage.value = 'Please enter a valid email address'
+    showMessage.value = true
+    setTimeout(() => {
+      showMessage.value = false
+    }, 3000)
+    return
+  }
+
+  isSubscribing.value = true
+
+  try {
+    // Check if email already exists
+    const { data: existing } = await supabase
+      .from('newsletter_subscribers')
+      .select('*')
+      .eq('email', email.value.toLowerCase())
+      .single()
+
+    if (existing) {
+      if (existing.is_active) {
+        subscriptionMessage.value = 'You are already subscribed to our newsletter!'
+      } else {
+        // Reactivate subscription
+        const { error: updateError } = await supabase
+          .from('newsletter_subscribers')
+          .update({ is_active: true, unsubscribed_at: null })
+          .eq('email', email.value.toLowerCase())
+
+        if (updateError) throw updateError
+
+        subscriptionMessage.value = 'Welcome back! Your subscription has been reactivated.'
+      }
+    } else {
+      // Create new subscription
+      const { error: insertError } = await supabase
+        .from('newsletter_subscribers')
+        .insert([{ email: email.value.toLowerCase() }])
+
+      if (insertError) throw insertError
+
+      subscriptionMessage.value =
+        'Thank you for subscribing! You will receive updates about new announcements.'
+    }
+
+    showMessage.value = true
     email.value = ''
+
+    setTimeout(() => {
+      showMessage.value = false
+    }, 5000)
+  } catch (err: any) {
+    console.error('Error subscribing to newsletter:', err)
+    subscriptionMessage.value = 'Oops! Something went wrong. Please try again later.'
+    showMessage.value = true
+
+    setTimeout(() => {
+      showMessage.value = false
+    }, 3000)
+  } finally {
+    isSubscribing.value = false
   }
 }
 </script>
@@ -71,6 +133,8 @@ const handleSubscribe = () => {
         <v-col cols="12" md="4" class="text-center text-md-left">
           <h4 class="text-h6 font-weight-bold mb-4 text-primary">Newsletter</h4>
           <p class="text-body-2 text-primary mb-4 text-left">Receive news straight to your inbox</p>
+
+          <!-- Subscription Form -->
           <div class="d-flex align-center" style="gap: 12px">
             <v-text-field
               v-model="email"
@@ -79,18 +143,42 @@ const handleSubscribe = () => {
               density="compact"
               hide-details
               class="flex-grow-1"
+              :disabled="isSubscribing"
               @keyup.enter="handleSubscribe"
             ></v-text-field>
             <v-btn
               color="primary"
               variant="elevated"
               rounded
+              :loading="isSubscribing"
+              :disabled="isSubscribing"
               @click="handleSubscribe"
               class="flex-shrink-0"
             >
               Subscribe
             </v-btn>
           </div>
+
+          <!-- Subscription Message -->
+          <v-fade-transition>
+            <v-alert
+              v-if="showMessage"
+              :type="
+                subscriptionMessage.includes('already') ||
+                subscriptionMessage.includes('Thank you') ||
+                subscriptionMessage.includes('Welcome')
+                  ? 'success'
+                  : 'error'
+              "
+              variant="tonal"
+              density="compact"
+              class="mt-3"
+              closable
+              @click:close="showMessage = false"
+            >
+              {{ subscriptionMessage }}
+            </v-alert>
+          </v-fade-transition>
         </v-col>
       </v-row>
 

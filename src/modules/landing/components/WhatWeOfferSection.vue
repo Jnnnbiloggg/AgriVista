@@ -408,25 +408,30 @@ const offerCards: OfferCard[] = [
     <v-dialog v-model="showPreviewDialog" max-width="1000" scrollable>
       <v-card class="preview-dialog-card">
         <!-- Dialog Header -->
-        <v-card-title class="pa-6 d-flex align-center justify-space-between preview-header">
-          <div class="d-flex align-center">
-            <v-icon
-              :icon="getPreviewIcon(previewType)"
-              size="32"
-              color="primary"
-              class="mr-3"
-            ></v-icon>
-            <div>
-              <div class="text-h5 font-weight-bold">{{ previewTitle }}</div>
-              <div class="text-caption text-grey-darken-1">Showing latest available items</div>
+        <v-card-title class="pa-6 preview-header">
+          <div class="d-flex align-start justify-space-between w-100" style="gap: 12px">
+            <div class="d-flex align-start flex-grow-1" style="min-width: 0; gap: 12px">
+              <v-icon
+                :icon="getPreviewIcon(previewType)"
+                size="32"
+                color="primary"
+                class="flex-shrink-0 mt-1"
+              ></v-icon>
+              <div class="flex-grow-1" style="min-width: 0; overflow: hidden">
+                <div class="preview-title-text">{{ previewTitle }}</div>
+                <div class="text-caption text-grey-darken-1" style="white-space: normal">
+                  Showing latest available items
+                </div>
+              </div>
             </div>
+            <v-btn
+              icon="mdi-close"
+              variant="text"
+              size="small"
+              class="flex-shrink-0"
+              @click="showPreviewDialog = false"
+            ></v-btn>
           </div>
-          <v-btn
-            icon="mdi-close"
-            variant="text"
-            size="small"
-            @click="showPreviewDialog = false"
-          ></v-btn>
         </v-card-title>
 
         <v-divider></v-divider>
@@ -603,6 +608,9 @@ const offerCards: OfferCard[] = [
   position: relative;
   overflow: hidden;
   background-color: #fafafa;
+  margin: 0 !important;
+  padding: 0 !important;
+  margin-top: -5px !important;
 }
 
 .hero-background {
@@ -610,6 +618,8 @@ const offerCards: OfferCard[] = [
   position: relative;
   width: 100vw;
   margin-left: calc(-50vw + 50%);
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .hero-image {
@@ -686,6 +696,18 @@ const offerCards: OfferCard[] = [
 
 .preview-header {
   background: linear-gradient(135deg, rgba(76, 175, 80, 0.05), rgba(76, 175, 80, 0.02));
+}
+
+.preview-title-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  hyphens: auto;
+  max-width: 100%;
 }
 
 .preview-item-card {
@@ -767,6 +789,29 @@ const offerCards: OfferCard[] = [
 
   .text-h6 {
     font-size: 1.1rem !important;
+  }
+}
+
+/* Responsive dialog header: stack vertically on small screens */
+@media (max-width: 600px) {
+  .preview-header .w-100 {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  .preview-header .preview-title-text {
+    font-size: 1.1rem;
+    text-align: left;
+    word-break: break-word;
+    white-space: normal;
+    max-width: 100%;
+  }
+  .preview-header .text-caption {
+    white-space: normal;
+  }
+  .preview-header .v-btn {
+    align-self: flex-end;
+    margin-top: 4px;
   }
 }
 </style>

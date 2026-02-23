@@ -533,6 +533,14 @@ const pageSubtitle = computed(() =>
 
                   <template v-slot:item.actions="{ item }">
                     <v-btn
+                      :icon="item.is_public ? 'mdi-eye-off' : 'mdi-eye'"
+                      size="small"
+                      variant="text"
+                      :color="item.is_public ? 'warning' : 'success'"
+                      @click="handleTogglePublicStatus(item.id, item.is_public)"
+                      :title="item.is_public ? 'Make Private' : 'Make Public'"
+                    ></v-btn>
+                    <v-btn
                       icon="mdi-delete"
                       size="small"
                       variant="text"

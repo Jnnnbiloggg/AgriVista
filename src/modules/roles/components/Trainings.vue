@@ -529,7 +529,7 @@ const getRegisterButtonText = (training: any) => {
   } else if (training.user_registration_status === 'pending') {
     return 'Pending Confirmation'
   } else if (training.user_registration_status === 'cancelled') {
-    return 'Registration Cancelled'
+    return 'Register Again'
   } else if (isTrainingFull(training)) {
     return 'Fully Booked'
   }
@@ -544,7 +544,7 @@ const getRegisterButtonColor = (training: any) => {
   } else if (training.user_registration_status === 'pending') {
     return 'warning'
   } else if (training.user_registration_status === 'cancelled') {
-    return 'error'
+    return 'orange'
   } else if (isTrainingFull(training)) {
     return 'grey'
   }
@@ -552,6 +552,10 @@ const getRegisterButtonColor = (training: any) => {
 }
 
 const isRegisterDisabled = (training: any) => {
+  // Allow re-registration if status is cancelled
+  if (training.user_registration_status === 'cancelled') {
+    return isTrainingCompleted(training) || isTrainingFull(training)
+  }
   return (
     isTrainingCompleted(training) || !!training.user_registration_status || isTrainingFull(training)
   )

@@ -3,12 +3,12 @@
 <template>
   <section id="about" class="about-section">
     <!-- <v-container fluid class="fill-height"> -->
-    <v-card color="primary" class="pa-8 fill-height" rounded="lg">
+    <v-card color="primary" class="pa-8" rounded="0">
       <v-row align="center" class="fill-height">
         <!-- Left Column - Text Content -->
         <v-col cols="12" md="6" class="pr-md-8">
-          <h2 class="display-1 font-weight-bold text-white mb-4">ABOUT US</h2>
-          <h3 class="text-h4 font-weight-medium mb-6 text-white">
+          <h2 class="text-h4 font-weight-bold mb-6 text-white">ABOUT US</h2>
+          <h3 class="text-h5 font-weight-medium mb-6 text-white">
             Robrosa's Strawberry & Herbs Farm
           </h3>
           <div class="text-body-1 text-white mb-8 line-height-1-6">
@@ -62,9 +62,16 @@
 
 <style scoped>
 .about-section {
-  min-height: 100svh;
-  /* padding-top: 80px; */
   background-color: #ffffff;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: block;
+  line-height: 0;
+}
+
+.about-section .v-card {
+  margin: 0 !important;
+  display: block;
 }
 
 .line-height-1-6 {
@@ -88,6 +95,10 @@
   .text-h4 {
     font-size: 1.8rem !important;
   }
+
+  .text-h5 {
+    font-size: 1.5rem !important;
+  }
 }
 
 @media (max-width: 600px) {
@@ -97,6 +108,10 @@
 
   .text-h4 {
     font-size: 1.5rem !important;
+  }
+
+  .text-h5 {
+    font-size: 1.1rem !important;
   }
 
   .text-h6 {

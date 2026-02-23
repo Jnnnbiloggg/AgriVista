@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS activities (
   duration TEXT,
   date DATE NOT NULL,
   time TIME NOT NULL,
+  end_date DATE,
+  end_time TIME,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -278,8 +280,13 @@ CREATE POLICY "Admins can delete activity images"
 CREATE OR REPLACE FUNCTION set_archived_at_from_date_time()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Generate archived_at from date and time + 12 hours
-  NEW.archived_at = (NEW.date + NEW.time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+  -- If end_date and end_time are provided, use them for archived_at
+  -- Otherwise, generate archived_at from date and time + 12 hours
+  IF NEW.end_date IS NOT NULL AND NEW.end_time IS NOT NULL THEN
+    NEW.archived_at = (NEW.end_date + NEW.end_time) AT TIME ZONE 'Asia/Manila';
+  ELSE
+    NEW.archived_at = (NEW.date + NEW.time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

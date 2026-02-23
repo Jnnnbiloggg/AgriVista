@@ -98,7 +98,20 @@ html {
 }
 
 /* Ensure v-main has proper spacing for fixed header */
-.v-main {
-  padding-top: 0 !important;
+:deep(.v-main) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+:deep(.v-main__wrap) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Remove any gaps between sections */
+section {
+  display: block;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 </style>

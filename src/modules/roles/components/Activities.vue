@@ -262,7 +262,7 @@ const getBookingButtonText = (activity: any) => {
   } else if (activity.user_booking_status === 'pending') {
     return 'Booking Pending'
   } else if (activity.user_booking_status === 'cancelled') {
-    return 'Booking Cancelled'
+    return 'Book Again'
   } else if (isActivityFull(activity)) {
     return 'Fully Booked'
   }
@@ -275,7 +275,7 @@ const getBookingButtonColor = (activity: any) => {
   } else if (activity.user_booking_status === 'pending') {
     return 'warning'
   } else if (activity.user_booking_status === 'cancelled') {
-    return 'error'
+    return 'orange'
   } else if (isActivityFull(activity)) {
     return 'grey'
   }
@@ -283,6 +283,10 @@ const getBookingButtonColor = (activity: any) => {
 }
 
 const isBookingDisabled = (activity: any) => {
+  // Allow re-booking if status is cancelled
+  if (activity.user_booking_status === 'cancelled') {
+    return isActivityFull(activity)
+  }
   return !!activity.user_booking_status || isActivityFull(activity)
 }
 
@@ -312,6 +316,8 @@ const activityDialog = useFormDialog<{
   location: string
   date: string
   time: string
+  end_date?: string | null
+  end_time?: string | null
   image_url?: string | null
   id?: number
 }>({
@@ -323,6 +329,8 @@ const activityDialog = useFormDialog<{
     location: '',
     date: '',
     time: '',
+    end_date: null,
+    end_time: null,
     image_url: null,
   }),
   validate: (data) => {
@@ -527,6 +535,7 @@ const cancelUserAppointment = async (appointmentId: number) => {
 const activityHeaders = [
   { title: 'Activity', key: 'name' },
   { title: 'Type', key: 'type' },
+  { title: 'Date & Time', key: 'date' },
   { title: 'Capacity', key: 'capacity' },
   { title: 'Confirmed', key: 'confirmed_count' },
   { title: 'Location', key: 'location' },
@@ -592,6 +601,25 @@ const toggleAndFetch = () => {
 const toggleAndFetchAppointments = () => {
   showArchivedAppointments.value = !showArchivedAppointments.value
   fetchAppointments()
+}
+
+const getActivityTimeRange = (activity: any) => {
+  const startDate = formatDate(activity.date)
+  const startTime = formatTime(activity.time)
+
+  if (activity.end_date && activity.end_time) {
+    const endDate = formatDate(activity.end_date)
+    const endTime = formatTime(activity.end_time)
+
+    // If same day, just show date once
+    if (activity.date === activity.end_date) {
+      return `${startDate}, ${startTime} - ${endTime}`
+    } else {
+      return `${startDate} ${startTime} - ${endDate} ${endTime}`
+    }
+  }
+
+  return `${startDate}, ${startTime}`
 }
 </script>
 
@@ -687,12 +715,8 @@ const toggleAndFetchAppointments = () => {
 
                     <div class="chips-row mb-2">
                       <v-chip color="secondary" size="small" variant="tonal" class="mr-2">
-                        <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
-                        {{ formatDate(activity.date) }}
-                      </v-chip>
-                      <v-chip color="secondary" size="small" variant="tonal">
-                        <v-icon icon="mdi-clock-outline" size="small" class="mr-1"></v-icon>
-                        {{ formatTime(activity.time) }}
+                        <v-icon icon="mdi-calendar-clock" size="small" class="mr-1"></v-icon>
+                        {{ getActivityTimeRange(activity) }}
                       </v-chip>
                     </div>
 
@@ -1060,6 +1084,12 @@ const toggleAndFetchAppointments = () => {
                             {{ item.description.substring(0, 50) }}...
                           </div>
                         </div>
+                      </div>
+                    </template>
+
+                    <template v-slot:item.date="{ item }">
+                      <div class="text-body-2">
+                        {{ getActivityTimeRange(item) }}
                       </div>
                     </template>
 
@@ -1521,15 +1551,9 @@ const toggleAndFetchAppointments = () => {
             </v-list-item>
             <v-list-item>
               <template v-slot:prepend>
-                <v-icon icon="mdi-calendar"></v-icon>
+                <v-icon icon="mdi-calendar-clock"></v-icon>
               </template>
-              <v-list-item-title>{{ formatDate(selectedActivity.date) }}</v-list-item-title>
-            </v-list-item>
-            <v-list-item>
-              <template v-slot:prepend>
-                <v-icon icon="mdi-clock-outline"></v-icon>
-              </template>
-              <v-list-item-title>{{ formatTime(selectedActivity.time) }}</v-list-item-title>
+              <v-list-item-title>{{ getActivityTimeRange(selectedActivity) }}</v-list-item-title>
             </v-list-item>
             <v-list-item>
               <template v-slot:prepend>
@@ -1659,10 +1683,28 @@ const toggleAndFetchAppointments = () => {
               <v-col cols="12" md="6">
                 <v-text-field
                   v-model="activityDialog.formData.value.time"
-                  label="Activity Time *"
+                  label="Start Time *"
                   type="time"
                   variant="outlined"
                   required
+                ></v-text-field>
+              </v-col>
+
+              <v-col cols="12" md="6">
+                <v-text-field
+                  v-model="activityDialog.formData.value.end_date"
+                  label="End Date (Optional)"
+                  type="date"
+                  variant="outlined"
+                ></v-text-field>
+              </v-col>
+
+              <v-col cols="12" md="6">
+                <v-text-field
+                  v-model="activityDialog.formData.value.end_time"
+                  label="End Time (Optional)"
+                  type="time"
+                  variant="outlined"
                 ></v-text-field>
               </v-col>
             </v-row>

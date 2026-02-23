@@ -17,6 +17,8 @@ export interface Activity {
   duration?: string | null
   date: string
   time: string
+  end_date?: string | null
+  end_time?: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -223,15 +225,21 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
+      // Sanitize optional fields: convert empty strings to null
+      // Also exclude computed properties that aren't in the database
+      const { confirmed_count, user_booking_status, ...dbActivity } = activity as any
+
+      const sanitizedActivity = {
+        ...dbActivity,
+        image_url: imageUrl,
+        created_by: authStore.userId,
+        end_date: activity.end_date || null,
+        end_time: activity.end_time || null,
+      }
+
       const { data, error: createError } = await supabase
         .from('activities')
-        .insert([
-          {
-            ...activity,
-            image_url: imageUrl,
-            created_by: authStore.userId,
-          },
-        ])
+        .insert([sanitizedActivity])
         .select()
         .single()
 
@@ -269,12 +277,20 @@ export const useActivities = () => {
         imageUrl = await uploadImage(imageFile)
       }
 
+      // Sanitize optional fields: convert empty strings to null
+      // Also exclude computed properties that aren't in the database
+      const { confirmed_count, user_booking_status, ...dbUpdates } = updates as any
+
+      const sanitizedUpdates = {
+        ...dbUpdates,
+        image_url: imageUrl,
+        end_date: updates.end_date || null,
+        end_time: updates.end_time || null,
+      }
+
       const { data, error: updateError } = await supabase
         .from('activities')
-        .update({
-          ...updates,
-          image_url: imageUrl,
-        })
+        .update(sanitizedUpdates)
         .eq('id', id)
         .select()
         .single()
