@@ -593,16 +593,6 @@ const canCancel = (dateStr?: string, timeStr?: string) => {
   return diffTime / (1000 * 3600 * 24) >= 3
 }
 
-const toggleAndFetch = () => {
-  showArchivedActivities.value = !showArchivedActivities.value
-  fetchActivities()
-}
-
-const toggleAndFetchAppointments = () => {
-  showArchivedAppointments.value = !showArchivedAppointments.value
-  fetchAppointments()
-}
-
 const getActivityTimeRange = (activity: any) => {
   const startDate = formatDate(activity.date)
   const startTime = formatTime(activity.time)
@@ -980,14 +970,15 @@ const getActivityTimeRange = (activity: any) => {
                       </div>
                     </div>
                     <div class="d-flex flex-column gap-2">
-                      <v-btn
-                        :color="showArchivedActivities ? 'secondary' : 'grey'"
-                        variant="tonal"
-                        block
-                        @click="toggleAndFetch"
-                      >
-                        {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
-                      </v-btn>
+                      <v-switch
+                        v-model="showArchivedActivities"
+                        label="Show Archived"
+                        color="primary"
+                        hide-details
+                        density="compact"
+                        class="mb-2"
+                        @change="fetchActivities()"
+                      ></v-switch>
                       <v-btn
                         color="primary"
                         prepend-icon="mdi-plus"
@@ -1017,13 +1008,15 @@ const getActivityTimeRange = (activity: any) => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
-                      <v-btn
-                        :color="showArchivedActivities ? 'secondary' : 'grey'"
-                        variant="tonal"
-                        @click="toggleAndFetch"
-                      >
-                        {{ showArchivedActivities ? 'Hide Archived' : 'Show Archived' }}
-                      </v-btn>
+                      <v-switch
+                        v-model="showArchivedActivities"
+                        label="Show Archived"
+                        color="primary"
+                        hide-details
+                        density="compact"
+                        class="mr-2"
+                        @change="fetchActivities()"
+                      ></v-switch>
                       <v-pagination
                         v-if="activities.length > 0"
                         v-model="activitiesPage"
@@ -1284,14 +1277,15 @@ const getActivityTimeRange = (activity: any) => {
                       </div>
                     </div>
                     <div class="d-flex flex-column gap-2">
-                      <v-btn
-                        :color="showArchivedAppointments ? 'secondary' : 'grey'"
-                        variant="tonal"
-                        block
-                        @click="toggleAndFetchAppointments"
-                      >
-                        {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
-                      </v-btn>
+                      <v-switch
+                        v-model="showArchivedAppointments"
+                        label="Show Archived"
+                        color="primary"
+                        hide-details
+                        density="compact"
+                        class="mb-2"
+                        @change="fetchAppointments()"
+                      ></v-switch>
                       <v-btn
                         color="success"
                         variant="elevated"
@@ -1322,13 +1316,15 @@ const getActivityTimeRange = (activity: any) => {
                       >
                     </div>
                     <div class="d-flex align-center gap-2">
-                      <v-btn
-                        :color="showArchivedAppointments ? 'secondary' : 'grey'"
-                        variant="tonal"
-                        @click="toggleAndFetchAppointments"
-                      >
-                        {{ showArchivedAppointments ? 'Hide Archived' : 'Show Archived' }}
-                      </v-btn>
+                      <v-switch
+                        v-model="showArchivedAppointments"
+                        label="Show Archived"
+                        color="primary"
+                        hide-details
+                        density="compact"
+                        class="mr-2"
+                        @change="fetchAppointments()"
+                      ></v-switch>
                       <v-pagination
                         v-if="appointments.length > 0"
                         v-model="appointmentsPage"

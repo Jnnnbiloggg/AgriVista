@@ -284,7 +284,7 @@ const offerCards: OfferCard[] = [
     description:
       "Browse and order fresh strawberries, herbs, vegetables, and other farm-grown products from Robrosa's. Everything is locally grown, naturally cultivated, and delivered fresh from the field to your table.",
     icon: 'mdi-basket',
-    image: '/landing-page/offer-2.jpg',
+    image: '/landing-page/strawberries.jpeg',
     buttonText: 'BROWSE PRODUCTS',
     previewType: 'products',
     action: goToProducts,
