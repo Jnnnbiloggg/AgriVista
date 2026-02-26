@@ -787,44 +787,46 @@ const cancelUserRegistration = async (registrationId: number) => {
                     </template>
 
                     <template v-slot:item.actions="{ item }">
-                      <v-btn
-                        icon="mdi-pencil"
-                        size="small"
-                        variant="text"
-                        color="primary"
-                        @click="handleEditTraining(item)"
-                      ></v-btn>
-                      <!-- Archive button: only when NOT auto-archived AND NOT manually archived -->
-                      <v-btn
-                        v-if="!isAutoArchived(item) && !isManuallyArchived(item)"
-                        icon="mdi-archive-arrow-down"
-                        size="small"
-                        variant="text"
-                        color="warning"
-                        @click="handleArchiveTraining(item)"
-                      >
-                        <v-icon>mdi-archive-arrow-down</v-icon>
-                        <v-tooltip activator="parent" location="top">Archive Training</v-tooltip>
-                      </v-btn>
-                      <!-- Unarchive button: only when manually archived AND auto-archive hasn't fired yet -->
-                      <v-btn
-                        v-else-if="isManuallyArchived(item) && !isAutoArchived(item)"
-                        icon="mdi-archive-arrow-up"
-                        size="small"
-                        variant="text"
-                        color="success"
-                        @click="handleUnarchiveTraining(item)"
-                      >
-                        <v-icon>mdi-archive-arrow-up</v-icon>
-                        <v-tooltip activator="parent" location="top">Unarchive Training</v-tooltip>
-                      </v-btn>
-                      <v-btn
-                        icon="mdi-delete"
-                        size="small"
-                        variant="text"
-                        color="error"
-                        @click="confirmDelete('training', item.id)"
-                      ></v-btn>
+                      <v-menu>
+                        <template v-slot:activator="{ props: menuProps }">
+                          <v-btn
+                            icon="mdi-dots-vertical"
+                            size="small"
+                            variant="text"
+                            v-bind="menuProps"
+                          ></v-btn>
+                        </template>
+                        <v-list>
+                          <v-list-item
+                            title="Edit"
+                            prepend-icon="mdi-pencil"
+                            base-color="primary"
+                            @click="handleEditTraining(item)"
+                          ></v-list-item>
+                          <!-- Archive: only when NOT auto-archived AND NOT manually archived -->
+                          <v-list-item
+                            v-if="!isAutoArchived(item) && !isManuallyArchived(item)"
+                            title="Archive"
+                            prepend-icon="mdi-archive-arrow-down"
+                            base-color="warning"
+                            @click="handleArchiveTraining(item)"
+                          ></v-list-item>
+                          <!-- Unarchive: only when manually archived AND auto-archive hasn't fired yet -->
+                          <v-list-item
+                            v-else-if="isManuallyArchived(item) && !isAutoArchived(item)"
+                            title="Unarchive"
+                            prepend-icon="mdi-archive-arrow-up"
+                            base-color="success"
+                            @click="handleUnarchiveTraining(item)"
+                          ></v-list-item>
+                          <v-list-item
+                            title="Delete"
+                            prepend-icon="mdi-delete"
+                            base-color="error"
+                            @click="confirmDelete('training', item.id)"
+                          ></v-list-item>
+                        </v-list>
+                      </v-menu>
                     </template>
                   </v-data-table>
                 </v-card-text>

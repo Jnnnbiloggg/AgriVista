@@ -162,6 +162,24 @@ db/migrations/add_manually_archived.sql
 - **Announcements Module:** Introduced an "infinite" duration option for announcements.
 - **User Detail Modal:** When opened from the user side, the "User Information" section is hidden — only record details (Booking/Appointment/Order/Registration) are shown. Admins see both sections.
 
+### Appointment Slots Management
+
+A new feature has been added allowing administrators to strictly control when users can book appointments.
+
+- **Admin Controls**: Under the "Appointments" tab in the admin dashboard, there is a new "Available Appointment Slots" section. Admins can create slots by specifying a Date, Start Time, and End Time (along with an optional label).
+- **User Booking Limitations**:
+  - The "Schedule Appointment" dialog now restricts the Date picker to **only** allow dates that have been explicitly added by an admin.
+  - The Time picker has been changed to a dropdown that intelligently auto-generates **30-minute intervals** that fit exactly within the start/end bounds set by the admin for the chosen date.
+- **Form Safety**: Strong validation enforces that it is impossible for a user to submit an appointment for dates/times outside these boundaries.
+
+#### Appointment Slots Database Migration
+
+Run the migration script in your **Supabase Dashboard → SQL Editor** to create the `appointment_slots` table, set up its Row Level Security policies, and create necessary indexes:
+
+```text
+db/migrations/07_add_appointment_slots.sql
+```
+
 ## Where to Look in the Code
 
 - **Notification UI:** `src/components/shared/NotificationMenu.vue` and `src/components/shared/AppSnackbar.vue`.

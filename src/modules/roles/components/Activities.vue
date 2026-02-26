@@ -3,6 +3,7 @@ import { ref, computed, onMounted, inject, type Ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useActivities } from '../composables/useActivities'
+import type { AppointmentSlot } from '../composables/useActivities'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useImageHandler } from '@/composables/useImageHandler'
@@ -15,6 +16,7 @@ import PageHeader from './shared/PageHeader.vue'
 import AppSnackbar from '@/components/shared/AppSnackbar.vue'
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog.vue'
 import UserDetailModal from '@/components/shared/UserDetailModal.vue'
+import AppointmentCalendar from './AppointmentCalendar.vue'
 
 interface Props {
   userType: 'admin' | 'user'
@@ -37,6 +39,7 @@ const {
   activities,
   bookings,
   appointments,
+  appointmentSlots,
   loading,
   error,
   activitiesTotal,
@@ -67,6 +70,7 @@ const {
   deleteBooking,
   goToBookingsPage,
   fetchAppointments,
+  fetchAppointmentSlots,
   searchAppointments,
   clearAppointmentsSearch,
   createAppointment,
@@ -75,6 +79,9 @@ const {
   manuallyArchiveAppointment,
   unarchiveAppointment,
   goToAppointmentsPage,
+  createAppointmentSlot,
+  updateAppointmentSlot,
+  deleteAppointmentSlot,
   setupRealtimeSubscriptions,
   showArchivedActivities,
   showArchivedAppointments,
@@ -186,6 +193,52 @@ const appointmentTypes = [
   'Other',
 ]
 
+// ========================
+// APPOINTMENT SLOTS & CALENDAR
+// ========================
+
+const handleSaveSlots = async (date: string, amSlots: number, pmSlots: number) => {
+  try {
+    // Delete existing slots for this date
+    const existing = appointmentSlots.value.filter((s) => s.date === date)
+    for (const s of existing) {
+      if (s.id) await deleteAppointmentSlot(s.id)
+    }
+    // Create new ones
+    if (amSlots > 0) {
+      await createAppointmentSlot({ date, time_slot: 'AM', available_slots: amSlots })
+    }
+    if (pmSlots > 0) {
+      await createAppointmentSlot({ date, time_slot: 'PM', available_slots: pmSlots })
+    }
+    showSnackbar('Slots updated successfully', 'success')
+  } catch (e: any) {
+    showSnackbar(e.message || 'Failed to update slots', 'error')
+  }
+}
+
+const availableTimeSlotOptions = computed(() => {
+  const date = appointmentDialog.formData.value.date
+  if (!date) return []
+  // find slots for this date
+  const slots = appointmentSlots.value.filter((s) => s.date === date && s.available_slots > 0)
+  return slots.map((s) => s.time_slot)
+})
+
+const openAppointmentDialogWithDateAndTime = (date: string, time_slot: 'AM' | 'PM') => {
+  appointmentDialog.openForCreate()
+  // Wait for the next tick is not strictly needed since openForCreate is synchronous,
+  // but we assign state *after* openForCreate resets to initial state.
+  appointmentDialog.formData.value.date = date
+  appointmentDialog.formData.value.time_slot = time_slot
+}
+
+const onAppointmentDateChange = () => {
+  appointmentDialog.formData.value.time_slot = 'AM'
+}
+
+// Admin slot features were handled by AppointmentCalendar
+
 const activityTypes = ['Workshop', 'Tour', 'Harvesting', 'Training', 'Event']
 
 // Use form dialog for appointment form (user)
@@ -195,7 +248,7 @@ const appointmentDialog = useFormDialog<{
   contact_number: string
   appointment_type: string
   date: string
-  time: string
+  time_slot: 'AM' | 'PM'
   note: string
 }>({
   initialData: () => ({
@@ -204,11 +257,11 @@ const appointmentDialog = useFormDialog<{
     contact_number: userContactNumber.value,
     appointment_type: '',
     date: '',
-    time: '',
+    time_slot: 'AM',
     note: '',
   }),
   validate: (data) => {
-    if (!data.contact_number || !data.appointment_type || !data.date || !data.time) {
+    if (!data.contact_number || !data.appointment_type || !data.date || !data.time_slot) {
       return { valid: false, message: 'Please fill in all required fields' }
     }
     return { valid: true }
@@ -384,15 +437,10 @@ onMounted(async () => {
     router.replace({ query: { ...route.query, tab: 'activities' } })
   }
 
-  if (props.userType === 'admin') {
-    await fetchActivities()
-    await fetchBookings()
-    await fetchAppointments()
-  } else {
-    await fetchActivities()
-    await fetchBookings()
-    await fetchAppointments()
-  }
+  await fetchActivities()
+  await fetchBookings()
+  await fetchAppointments()
+  await fetchAppointmentSlots()
   setupRealtimeSubscriptions()
 })
 
@@ -491,7 +539,7 @@ const downloadAppointments = () => {
       a.contact_number,
       a.appointment_type,
       a.date,
-      a.time,
+      a.time_slot,
       a.note || '',
       a.status,
     ]),
@@ -590,8 +638,11 @@ const openUserDetail = (record: any, type: 'booking' | 'appointment') => {
 }
 
 const canCancel = (dateStr?: string, timeStr?: string) => {
-  if (!dateStr || !timeStr) return false
-  const activityDateTime = new Date(`${dateStr}T${timeStr}`)
+  if (!dateStr) return false
+  const activityDateTime = new Date(`${dateStr}T00:00:00`)
+  if (timeStr === 'PM') {
+    activityDateTime.setHours(12)
+  }
   const now = new Date()
   const diffTime = activityDateTime.getTime() - now.getTime()
   return diffTime / (1000 * 3600 * 24) >= 3
@@ -907,17 +958,16 @@ const handleUnarchiveAppointment = async (item: any) => {
                         >{{ appointmentsTotal }} total</v-chip
                       >
                     </div>
-                    <v-btn
-                      color="success"
-                      variant="elevated"
-                      prepend-icon="mdi-calendar-check"
-                      @click="appointmentDialog.openForCreate"
-                    >
-                      Schedule Appointment
-                    </v-btn>
                   </div>
                 </v-card-title>
                 <v-card-text>
+                  <div class="mb-6">
+                    <AppointmentCalendar
+                      :isAdmin="false"
+                      :availableSlots="appointmentSlots"
+                      @request-booking="openAppointmentDialogWithDateAndTime"
+                    />
+                  </div>
                   <!-- Loading State -->
                   <div v-if="loading" class="text-center py-12">
                     <v-progress-circular
@@ -954,7 +1004,7 @@ const handleUnarchiveAppointment = async (item: any) => {
                     <template v-slot:item.date="{ item }">
                       <div>
                         <div>{{ formatDate(item.date) }}</div>
-                        <div class="text-caption">{{ formatTime(item.time) }}</div>
+                        <div class="text-caption font-weight-bold">{{ item.time_slot }}</div>
                       </div>
                     </template>
 
@@ -967,7 +1017,7 @@ const handleUnarchiveAppointment = async (item: any) => {
                     <template v-slot:item.actions="{ item }">
                       <v-btn
                         v-if="item.status !== 'cancelled'"
-                        :disabled="!canCancel(item.date, item.time)"
+                        :disabled="!canCancel(item.date, item.time_slot)"
                         icon="mdi-close-circle"
                         size="small"
                         color="error"
@@ -977,7 +1027,7 @@ const handleUnarchiveAppointment = async (item: any) => {
                         <v-icon>mdi-close-circle</v-icon>
                         <v-tooltip activator="parent" location="top">
                           {{
-                            canCancel(item.date, item.time)
+                            canCancel(item.date, item.time_slot)
                               ? 'Cancel Appointment'
                               : 'Cannot cancel within 3 days'
                           }}
@@ -1348,6 +1398,23 @@ const handleUnarchiveAppointment = async (item: any) => {
 
         <!-- Appointments Tab -->
         <v-window-item value="appointments">
+          <!-- Available Slots Management (admin) -->
+          <v-row class="mb-4">
+            <v-col cols="12">
+              <v-card>
+                <v-card-text>
+                  <!-- Calendar View for Slot Management -->
+                  <AppointmentCalendar
+                    :isAdmin="true"
+                    :availableSlots="appointmentSlots"
+                    @save-slots="handleSaveSlots"
+                  />
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- Appointments List -->
           <v-row>
             <v-col cols="12">
               <v-card>
@@ -1468,7 +1535,7 @@ const handleUnarchiveAppointment = async (item: any) => {
                     <template v-slot:item.date="{ item }">
                       <div>
                         <div>{{ item.date }}</div>
-                        <div class="text-caption">{{ item.time }}</div>
+                        <div class="text-caption font-weight-bold">{{ item.time_slot }}</div>
                       </div>
                     </template>
 
@@ -1578,20 +1645,26 @@ const handleUnarchiveAppointment = async (item: any) => {
                 <v-text-field
                   v-model="appointmentDialog.formData.value.date"
                   label="Date *"
-                  type="date"
                   variant="outlined"
                   required
-                ></v-text-field>
+                  readonly
+                  style="width: 100%"
+                  prepend-inner-icon="mdi-calendar"
+                >
+                </v-text-field>
               </v-col>
 
               <v-col cols="12" md="6">
                 <v-text-field
-                  v-model="appointmentDialog.formData.value.time"
-                  label="Time *"
-                  type="time"
+                  v-model="appointmentDialog.formData.value.time_slot"
+                  label="Time Slot *"
                   variant="outlined"
                   required
-                ></v-text-field>
+                  readonly
+                  prepend-inner-icon="mdi-clock-outline"
+                  style="width: 100%"
+                >
+                </v-text-field>
               </v-col>
 
               <v-col cols="12">
@@ -1920,4 +1993,14 @@ const handleUnarchiveAppointment = async (item: any) => {
 .activity-card {
   min-height: 420px;
 }
+
+/* :deep(input[type='time']::-webkit-calendar-picker-indicator) {
+  display: none;
+  -webkit-appearance: none;
+}
+
+:deep(input[type='date']::-webkit-calendar-picker-indicator) {
+  display: none;
+  -webkit-appearance: none;
+} */
 </style>

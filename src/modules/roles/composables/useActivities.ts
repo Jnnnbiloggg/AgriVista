@@ -50,13 +50,21 @@ export interface Appointment {
   contact_number: string
   appointment_type: string
   date: string
-  time: string
+  time_slot: 'AM' | 'PM'
   note: string | null
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
   archived_at: string | null
   manually_archived?: boolean
+}
+
+export interface AppointmentSlot {
+  id: number
+  date: string // YYYY-MM-DD
+  time_slot: 'AM' | 'PM'
+  available_slots: number
+  created_at: string
 }
 
 export interface PaginationOptions {
@@ -73,6 +81,7 @@ export const useActivities = () => {
   const activities = ref<Activity[]>([])
   const bookings = ref<Booking[]>([])
   const appointments = ref<Appointment[]>([])
+  const appointmentSlots = ref<AppointmentSlot[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -96,6 +105,7 @@ export const useActivities = () => {
   let activitiesChannel: RealtimeChannel | null = null
   let bookingsChannel: RealtimeChannel | null = null
   let appointmentsChannel: RealtimeChannel | null = null
+  let appointmentSlotsChannel: RealtimeChannel | null = null
 
   // Computed pagination info
   const activitiesTotalPages = computed(() => Math.ceil(activitiesTotal.value / itemsPerPage.value))
@@ -781,6 +791,76 @@ export const useActivities = () => {
   }
 
   // ============================================
+  // APPOINTMENT SLOTS
+  // ============================================
+
+  const fetchAppointmentSlots = async () => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('appointment_slots')
+        .select('*')
+        .order('date', { ascending: true })
+        .order('time_slot', { ascending: true })
+
+      if (fetchError) throw fetchError
+      appointmentSlots.value = data || []
+    } catch (err: any) {
+      console.error('Error fetching appointment slots:', err)
+    }
+  }
+
+  const createAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'created_at'>) => {
+    try {
+      const { data, error: createError } = await supabase
+        .from('appointment_slots')
+        .insert([slot])
+        .select()
+        .single()
+
+      if (createError) throw createError
+      await fetchAppointmentSlots()
+      return { success: true, data }
+    } catch (err: any) {
+      console.error('Error creating appointment slot:', err)
+      return { success: false, error: err.message }
+    }
+  }
+
+  const updateAppointmentSlot = async (
+    id: number,
+    updates: Partial<Omit<AppointmentSlot, 'id' | 'created_at'>>,
+  ) => {
+    try {
+      const { data, error: updateError } = await supabase
+        .from('appointment_slots')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+      await fetchAppointmentSlots()
+      return { success: true, data }
+    } catch (err: any) {
+      console.error('Error updating appointment slot:', err)
+      return { success: false, error: err.message }
+    }
+  }
+
+  const deleteAppointmentSlot = async (id: number) => {
+    try {
+      const { error: deleteError } = await supabase.from('appointment_slots').delete().eq('id', id)
+
+      if (deleteError) throw deleteError
+      await fetchAppointmentSlots()
+      return { success: true }
+    } catch (err: any) {
+      console.error('Error deleting appointment slot:', err)
+      return { success: false, error: err.message }
+    }
+  }
+
+  // ============================================
   // IMAGE HANDLING
   // ============================================
 
@@ -882,6 +962,23 @@ export const useActivities = () => {
         },
       )
       .subscribe()
+
+    // Appointment slots subscription
+    appointmentSlotsChannel = supabase
+      .channel('appointment-slots-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'appointment_slots',
+        },
+        async (payload) => {
+          // console.log('Appointment slots change received:', payload)
+          await fetchAppointmentSlots()
+        },
+      )
+      .subscribe()
   }
 
   const unsubscribeRealtime = () => {
@@ -896,6 +993,10 @@ export const useActivities = () => {
     if (appointmentsChannel) {
       supabase.removeChannel(appointmentsChannel)
       appointmentsChannel = null
+    }
+    if (appointmentSlotsChannel) {
+      supabase.removeChannel(appointmentSlotsChannel)
+      appointmentSlotsChannel = null
     }
   }
 
@@ -934,6 +1035,7 @@ export const useActivities = () => {
     activities,
     bookings,
     appointments,
+    appointmentSlots,
     loading,
     error,
 
@@ -977,6 +1079,7 @@ export const useActivities = () => {
 
     // Appointments methods
     fetchAppointments,
+    fetchAppointmentSlots,
     searchAppointments,
     clearAppointmentsSearch,
     createAppointment,
@@ -985,6 +1088,11 @@ export const useActivities = () => {
     manuallyArchiveAppointment,
     unarchiveAppointment,
     goToAppointmentsPage,
+
+    // Appointment slot methods
+    createAppointmentSlot,
+    updateAppointmentSlot,
+    deleteAppointmentSlot,
 
     // Realtime
     setupRealtimeSubscriptions,

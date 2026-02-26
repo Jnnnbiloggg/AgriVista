@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   contact_number TEXT NOT NULL,
   appointment_type TEXT NOT NULL,
   date DATE NOT NULL,
-  time TIME NOT NULL,
+  time_slot TEXT NOT NULL CHECK (time_slot IN ('AM', 'PM')),
   note TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -316,8 +316,82 @@ BEFORE INSERT OR UPDATE ON activities
 FOR EACH ROW
 EXECUTE FUNCTION set_archived_at_from_date_time();
 
+CREATE OR REPLACE FUNCTION set_appointments_archived_at()
+RETURNS TRIGGER AS $$
+DECLARE
+  base_time TIME;
+BEGIN
+  IF TG_OP = 'INSERT'
+     OR OLD.date IS DISTINCT FROM NEW.date
+     OR OLD.time_slot IS DISTINCT FROM NEW.time_slot
+  THEN
+    IF NEW.time_slot = 'AM' THEN
+      base_time := '12:00:00'::TIME;
+    ELSE
+      base_time := '17:00:00'::TIME;
+    END IF;
+
+    NEW.archived_at = (NEW.date + base_time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS trg_appointments_archived_at ON appointments;
 CREATE TRIGGER trg_appointments_archived_at
 BEFORE INSERT OR UPDATE ON appointments
 FOR EACH ROW
-EXECUTE FUNCTION set_archived_at_from_date_time();
+EXECUTE FUNCTION set_appointments_archived_at();
+
+-- ============================================
+-- APPOINTMENT SLOTS (admin-configurable available dates/times)
+-- ============================================
+
+-- Appointment Slots Table
+CREATE TABLE IF NOT EXISTS appointment_slots (
+  id BIGSERIAL PRIMARY KEY,
+  date DATE NOT NULL,
+  time_slot TEXT NOT NULL CHECK (time_slot IN ('AM', 'PM')),
+  available_slots INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(date, time_slot)
+);
+
+-- Migration: add appointment_slots table if it doesn't exist (idempotent via IF NOT EXISTS above)
+
+-- Enable Row Level Security
+ALTER TABLE appointment_slots ENABLE ROW LEVEL SECURITY;
+
+-- Everyone (authenticated) can view slots so users can see available dates/times
+CREATE POLICY "Appointment slots viewable by all authenticated users"
+  ON appointment_slots FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Only admins can insert slots
+CREATE POLICY "Only admins can insert appointment slots"
+  ON appointment_slots FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    is_admin(auth.jwt() ->> 'email')
+  );
+
+-- Only admins can update slots
+CREATE POLICY "Only admins can update appointment slots"
+  ON appointment_slots FOR UPDATE
+  TO authenticated
+  USING (
+    is_admin(auth.jwt() ->> 'email')
+  );
+
+-- Only admins can delete slots
+CREATE POLICY "Only admins can delete appointment slots"
+  ON appointment_slots FOR DELETE
+  TO authenticated
+  USING (
+    is_admin(auth.jwt() ->> 'email')
+  );
+
+-- Indexes for appointment_slots
+CREATE INDEX IF NOT EXISTS appointment_slots_date_idx ON appointment_slots(date);
+CREATE INDEX IF NOT EXISTS appointment_slots_date_time_slot_idx ON appointment_slots(date, time_slot);

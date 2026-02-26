@@ -23,6 +23,10 @@ const previewItems = ref<any[]>([])
 const previewLoading = ref(false)
 const previewType = ref<'products' | 'activities' | 'trainings' | 'announcements'>('products')
 
+// Announcement detail modal state
+const showAnnouncementDetail = ref(false)
+const selectedAnnouncement = ref<any>(null)
+
 // Fetch preview data from Supabase
 async function fetchPreviewProducts() {
   previewLoading.value = true
@@ -100,7 +104,6 @@ async function fetchPreviewAnnouncements() {
       .select('id, title, description, duration, image_url, created_at')
       .or(`visible_until.gt.${now},visible_until.is.null`)
       .order('created_at', { ascending: false })
-      .limit(6)
     if (error) {
       console.error('Error fetching announcements preview:', error)
     }
@@ -111,6 +114,12 @@ async function fetchPreviewAnnouncements() {
   } finally {
     previewLoading.value = false
   }
+}
+
+// Open announcement detail modal
+function openAnnouncementDetail(announcement: any) {
+  selectedAnnouncement.value = announcement
+  showAnnouncementDetail.value = true
 }
 
 // Open preview dialog
@@ -491,13 +500,13 @@ const offerCards: OfferCard[] = [
                   </div>
                 </div>
 
-                <v-card-item class="pb-1">
-                  <v-card-title class="text-subtitle-1 font-weight-bold">
+                <v-card-item class="px-3 pb-1 pt-2">
+                  <v-card-title class="text-subtitle-1 font-weight-bold px-0">
                     {{ getItemTitle(item, previewType) }}
                   </v-card-title>
                 </v-card-item>
 
-                <v-card-text class="pt-0 pb-2 flex-grow-1">
+                <v-card-text class="px-3 pt-0 pb-2 flex-grow-1">
                   <p class="text-body-2 text-grey-darken-1 preview-description">
                     {{ truncateText(item.description, 80) }}
                   </p>
@@ -569,8 +578,9 @@ const offerCards: OfferCard[] = [
                   </div>
                 </v-card-text>
 
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="px-3 pb-3">
                   <v-btn
+                    v-if="previewType !== 'announcements'"
                     color="primary"
                     variant="tonal"
                     block
@@ -580,6 +590,18 @@ const offerCards: OfferCard[] = [
                     @click="navigateToSection"
                   >
                     {{ getCtaText(previewType) }}
+                  </v-btn>
+                  <v-btn
+                    v-else
+                    color="primary"
+                    variant="tonal"
+                    block
+                    size="small"
+                    rounded="lg"
+                    prepend-icon="mdi-book-open-outline"
+                    @click="openAnnouncementDetail(item)"
+                  >
+                    Read More
                   </v-btn>
                 </v-card-actions>
               </v-card>
@@ -592,10 +614,79 @@ const offerCards: OfferCard[] = [
         <!-- Dialog Footer -->
         <v-card-actions class="pa-4 d-flex justify-space-between">
           <v-btn variant="text" @click="showPreviewDialog = false">Close</v-btn>
-          <v-btn color="primary" variant="elevated" rounded="lg" @click="navigateToSection">
+          <v-btn
+            v-if="previewType !== 'announcements'"
+            color="primary"
+            variant="elevated"
+            rounded="lg"
+            @click="navigateToSection"
+          >
             View All {{ previewTitle }}
             <v-icon end>mdi-arrow-right</v-icon>
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Announcement Detail Modal -->
+    <v-dialog v-model="showAnnouncementDetail" max-width="680" scrollable>
+      <v-card v-if="selectedAnnouncement" class="announcement-detail-card">
+        <!-- Header -->
+        <v-card-title class="pa-6 announcement-detail-header">
+          <div class="d-flex align-start justify-space-between w-100" style="gap: 12px">
+            <div class="d-flex align-start flex-grow-1" style="min-width: 0; gap: 12px">
+              <v-icon
+                icon="mdi-bullhorn"
+                size="28"
+                color="primary"
+                class="flex-shrink-0 mt-1"
+              ></v-icon>
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="announcement-detail-title">{{ selectedAnnouncement.title }}</div>
+                <div class="text-caption text-grey-darken-1 mt-1">
+                  <v-icon size="x-small" class="mr-1">mdi-calendar</v-icon>
+                  Posted {{ formatDate(selectedAnnouncement.created_at) }}
+                  <span v-if="selectedAnnouncement.duration" class="ml-2">
+                    <v-icon size="x-small" class="mr-1">mdi-clock-outline</v-icon>
+                    {{ selectedAnnouncement.duration }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <v-btn
+              icon="mdi-close"
+              variant="text"
+              size="small"
+              class="flex-shrink-0"
+              @click="showAnnouncementDetail = false"
+            ></v-btn>
+          </div>
+        </v-card-title>
+
+        <v-divider></v-divider>
+
+        <!-- Image -->
+        <v-img
+          v-if="selectedAnnouncement.image_url"
+          :src="selectedAnnouncement.image_url"
+          height="260"
+          cover
+        ></v-img>
+        <div v-else class="announcement-detail-fallback d-flex align-center justify-center">
+          <v-icon icon="mdi-bullhorn-outline" size="80" color="grey-lighten-1"></v-icon>
+        </div>
+
+        <!-- Body -->
+        <v-card-text class="pa-6">
+          <p class="text-body-1 announcement-detail-body">
+            {{ selectedAnnouncement.description || 'No details available for this announcement.' }}
+          </p>
+        </v-card-text>
+
+        <v-divider></v-divider>
+
+        <v-card-actions class="pa-4">
+          <v-btn variant="text" @click="showAnnouncementDetail = false">Close</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -790,6 +881,37 @@ const offerCards: OfferCard[] = [
   .text-h6 {
     font-size: 1.1rem !important;
   }
+}
+
+/* Announcement detail modal */
+.announcement-detail-card {
+  border-radius: 16px !important;
+  overflow: hidden;
+}
+
+.announcement-detail-header {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.05), rgba(76, 175, 80, 0.02));
+}
+
+.announcement-detail-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.announcement-detail-fallback {
+  height: 160px;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+}
+
+.announcement-detail-body {
+  line-height: 1.7;
+  white-space: pre-line;
+  color: rgba(0, 0, 0, 0.75);
 }
 
 /* Responsive dialog header: stack vertically on small screens */
