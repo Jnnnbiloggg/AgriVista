@@ -781,10 +781,6 @@ const orderStatusOptions = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancell
                             @click="updateOrderStatus(item.id, 'pending')"
                           ></v-list-item>
                           <v-list-item
-                            title="Confirm"
-                            @click="updateOrderStatus(item.id, 'confirmed')"
-                          ></v-list-item>
-                          <v-list-item
                             title="Complete"
                             @click="updateOrderStatus(item.id, 'completed')"
                           ></v-list-item>

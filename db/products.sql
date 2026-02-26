@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS orders (
   buyer_name TEXT NOT NULL,
   buyer_email TEXT NOT NULL,
   order_status TEXT DEFAULT 'pending' CHECK (order_status IN ('pending', 'confirmed', 'completed', 'cancelled')),
+  -- Note: Stock is auto-deducted when an order is created (reserved).
+  -- Cancelling an order restores the stock. 'confirmed' is kept for backwards compatibility.
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
