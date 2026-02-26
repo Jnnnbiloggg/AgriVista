@@ -20,6 +20,7 @@ export interface Training {
   created_at: string
   updated_at: string
   archived_at?: string | null
+  manually_archived?: boolean
   confirmed_count?: number
   user_registration_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
@@ -98,13 +99,17 @@ function useTrainings() {
 
       if (authStore.isAdmin) {
         if (showArchivedTrainings.value) {
-          query = query.lte('archived_at', now)
+          // Show items that are archived: auto-archived (archived_at <= now) OR manually archived
+          query = query.or(`archived_at.lte.${now},manually_archived.eq.true`)
         } else {
-          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+          // Show items that are NOT archived: auto-archive time hasn't passed AND not manually archived
+          query = query
+            .or(`archived_at.gt.${now},archived_at.is.null`)
+            .eq('manually_archived', false)
         }
       } else {
         // For regular users, only show unarchived items
-        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        query = query.or(`archived_at.gt.${now},archived_at.is.null`).eq('manually_archived', false)
       }
 
       // Apply search filter if exists
@@ -294,6 +299,81 @@ function useTrainings() {
     } catch (err: any) {
       error.value = err.message
       console.error('Error deleting training:', err)
+      return { success: false, error: err.message }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Manually archive a training (admin only).
+   * Sets manually_archived = true so it is hidden from users immediately.
+   */
+  const manuallyArchiveTraining = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const { error: updateError } = await supabase
+        .from('trainings')
+        .update({ manually_archived: true })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchTrainings()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error manually archiving training:', err)
+      return { success: false, error: err.message }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Unarchive a manually-archived training (admin only).
+   * This is only allowed if the auto-archive time (archived_at) hasn't been reached yet.
+   * Once the auto-archive trigger fires (NOW() >= archived_at), it cannot be unarchived.
+   */
+  const unarchiveTraining = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      // Fetch the training directly to get the latest archived_at
+      const { data: trainingData, error: fetchError } = await supabase
+        .from('trainings')
+        .select('archived_at, manually_archived')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      const now = new Date()
+      const autoArchiveTime = trainingData?.archived_at ? new Date(trainingData.archived_at) : null
+
+      // Block unarchive if the auto-archive time has already passed
+      if (autoArchiveTime && autoArchiveTime <= now) {
+        return {
+          success: false,
+          error: 'Cannot unarchive: the auto-archive time has already passed.',
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('trainings')
+        .update({ manually_archived: false })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchTrainings()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error unarchiving training:', err)
       return { success: false, error: err.message }
     } finally {
       loading.value = false
@@ -620,6 +700,8 @@ function useTrainings() {
     createTraining,
     updateTraining,
     deleteTraining,
+    manuallyArchiveTraining,
+    unarchiveTraining,
     goToTrainingsPage,
     // Registrations
     fetchRegistrations,

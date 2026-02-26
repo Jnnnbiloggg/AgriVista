@@ -52,6 +52,8 @@ const {
   createTraining,
   updateTraining,
   deleteTraining,
+  manuallyArchiveTraining,
+  unarchiveTraining,
   goToTrainingsPage,
   fetchRegistrations,
   searchRegistrations,
@@ -496,6 +498,37 @@ const isTrainingCompleted = (training: any | null) => {
   }
 }
 
+/**
+ * Returns true if the training is manually archived (admin-archived before auto-archive fires).
+ */
+const isManuallyArchived = (training: any) => !!training?.manually_archived
+
+/**
+ * Returns true if the auto-archive time has already passed (cannot be unarchived).
+ */
+const isAutoArchived = (training: any) => {
+  if (!training?.archived_at) return false
+  return new Date(training.archived_at) <= new Date()
+}
+
+const handleArchiveTraining = async (training: any) => {
+  const result = await manuallyArchiveTraining(training.id)
+  if (result.success) {
+    showSnackbar('Training archived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to archive training', 'error')
+  }
+}
+
+const handleUnarchiveTraining = async (training: any) => {
+  const result = await unarchiveTraining(training.id)
+  if (result.success) {
+    showSnackbar('Training unarchived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to unarchive training', 'error')
+  }
+}
+
 const getTrainingStatus = (training: any) => {
   return isTrainingCompleted(training) ? 'Completed' : 'In Progress'
 }
@@ -761,6 +794,30 @@ const cancelUserRegistration = async (registrationId: number) => {
                         color="primary"
                         @click="handleEditTraining(item)"
                       ></v-btn>
+                      <!-- Archive button: only when NOT auto-archived AND NOT manually archived -->
+                      <v-btn
+                        v-if="!isAutoArchived(item) && !isManuallyArchived(item)"
+                        icon="mdi-archive-arrow-down"
+                        size="small"
+                        variant="text"
+                        color="warning"
+                        @click="handleArchiveTraining(item)"
+                      >
+                        <v-icon>mdi-archive-arrow-down</v-icon>
+                        <v-tooltip activator="parent" location="top">Archive Training</v-tooltip>
+                      </v-btn>
+                      <!-- Unarchive button: only when manually archived AND auto-archive hasn't fired yet -->
+                      <v-btn
+                        v-else-if="isManuallyArchived(item) && !isAutoArchived(item)"
+                        icon="mdi-archive-arrow-up"
+                        size="small"
+                        variant="text"
+                        color="success"
+                        @click="handleUnarchiveTraining(item)"
+                      >
+                        <v-icon>mdi-archive-arrow-up</v-icon>
+                        <v-tooltip activator="parent" location="top">Unarchive Training</v-tooltip>
+                      </v-btn>
                       <v-btn
                         icon="mdi-delete"
                         size="small"

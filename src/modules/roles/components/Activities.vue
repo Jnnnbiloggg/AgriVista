@@ -56,6 +56,8 @@ const {
   createActivity,
   updateActivity,
   deleteActivity,
+  manuallyArchiveActivity,
+  unarchiveActivity,
   goToActivitiesPage,
   fetchBookings,
   searchBookings,
@@ -70,6 +72,8 @@ const {
   createAppointment,
   updateAppointment,
   deleteAppointment,
+  manuallyArchiveAppointment,
+  unarchiveAppointment,
   goToAppointmentsPage,
   setupRealtimeSubscriptions,
   showArchivedActivities,
@@ -611,6 +615,62 @@ const getActivityTimeRange = (activity: any) => {
 
   return `${startDate}, ${startTime}`
 }
+
+// ========================
+// MANUAL ARCHIVE HELPERS
+// ========================
+
+/** True if admin has manually archived this item */
+const isManuallyArchivedActivity = (item: any) => !!item?.manually_archived
+/** True if the auto-archive time has already passed (unarchive is blocked) */
+const isAutoArchivedActivity = (item: any) => {
+  if (!item?.archived_at) return false
+  return new Date(item.archived_at) <= new Date()
+}
+
+/** True if admin has manually archived this appointment */
+const isManuallyArchivedAppointment = (item: any) => !!item?.manually_archived
+/** True if the auto-archive time has already passed for an appointment */
+const isAutoArchivedAppointment = (item: any) => {
+  if (!item?.archived_at) return false
+  return new Date(item.archived_at) <= new Date()
+}
+
+const handleArchiveActivity = async (item: any) => {
+  const result = await manuallyArchiveActivity(item.id)
+  if (result.success) {
+    showSnackbar('Activity archived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to archive activity', 'error')
+  }
+}
+
+const handleUnarchiveActivity = async (item: any) => {
+  const result = await unarchiveActivity(item.id)
+  if (result.success) {
+    showSnackbar('Activity unarchived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to unarchive activity', 'error')
+  }
+}
+
+const handleArchiveAppointment = async (item: any) => {
+  const result = await manuallyArchiveAppointment(item.id)
+  if (result.success) {
+    showSnackbar('Appointment archived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to archive appointment', 'error')
+  }
+}
+
+const handleUnarchiveAppointment = async (item: any) => {
+  const result = await unarchiveAppointment(item.id)
+  if (result.success) {
+    showSnackbar('Appointment unarchived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to unarchive appointment', 'error')
+  }
+}
 </script>
 
 <template>
@@ -1109,6 +1169,32 @@ const getActivityTimeRange = (activity: any) => {
                         color="primary"
                         @click="handleEditActivity(item)"
                       ></v-btn>
+                      <!-- Archive button: only when NOT auto-archived AND NOT manually archived -->
+                      <v-btn
+                        v-if="!isAutoArchivedActivity(item) && !isManuallyArchivedActivity(item)"
+                        icon="mdi-archive-arrow-down"
+                        size="small"
+                        variant="text"
+                        color="warning"
+                        @click="handleArchiveActivity(item)"
+                      >
+                        <v-icon>mdi-archive-arrow-down</v-icon>
+                        <v-tooltip activator="parent" location="top">Archive Activity</v-tooltip>
+                      </v-btn>
+                      <!-- Unarchive button: only when manually archived AND auto-archive hasn't fired yet -->
+                      <v-btn
+                        v-else-if="
+                          isManuallyArchivedActivity(item) && !isAutoArchivedActivity(item)
+                        "
+                        icon="mdi-archive-arrow-up"
+                        size="small"
+                        variant="text"
+                        color="success"
+                        @click="handleUnarchiveActivity(item)"
+                      >
+                        <v-icon>mdi-archive-arrow-up</v-icon>
+                        <v-tooltip activator="parent" location="top">Unarchive Activity</v-tooltip>
+                      </v-btn>
                       <v-btn
                         icon="mdi-delete"
                         size="small"
@@ -1410,6 +1496,27 @@ const getActivityTimeRange = (activity: any) => {
                           <v-list-item
                             title="Cancel"
                             @click="updateAppointmentStatus(item.id, 'cancelled')"
+                          ></v-list-item>
+                          <v-divider></v-divider>
+                          <!-- Archive: only when NOT auto-archived AND NOT manually archived -->
+                          <v-list-item
+                            v-if="
+                              !isAutoArchivedAppointment(item) &&
+                              !isManuallyArchivedAppointment(item)
+                            "
+                            title="Archive"
+                            prepend-icon="mdi-archive-arrow-down"
+                            @click="handleArchiveAppointment(item)"
+                          ></v-list-item>
+                          <!-- Unarchive: only when manually archived AND auto-archive hasn't fired -->
+                          <v-list-item
+                            v-else-if="
+                              isManuallyArchivedAppointment(item) &&
+                              !isAutoArchivedAppointment(item)
+                            "
+                            title="Unarchive"
+                            prepend-icon="mdi-archive-arrow-up"
+                            @click="handleUnarchiveAppointment(item)"
                           ></v-list-item>
                         </v-list>
                       </v-menu>

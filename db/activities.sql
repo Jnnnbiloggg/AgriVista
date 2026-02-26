@@ -17,8 +17,12 @@ CREATE TABLE IF NOT EXISTS activities (
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  archived_at TIMESTAMPTZ
+  archived_at TIMESTAMPTZ,
+  manually_archived BOOLEAN DEFAULT FALSE
 );
+
+-- Migration: add manually_archived column if it doesn't exist
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS manually_archived BOOLEAN DEFAULT FALSE;
 
 -- Bookings Table
 CREATE TABLE IF NOT EXISTS bookings (
@@ -48,8 +52,12 @@ CREATE TABLE IF NOT EXISTS appointments (
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  archived_at TIMESTAMPTZ
+  archived_at TIMESTAMPTZ,
+  manually_archived BOOLEAN DEFAULT FALSE
 );
+
+-- Migration: add manually_archived column if it doesn't exist
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS manually_archived BOOLEAN DEFAULT FALSE;
 
 -- Enable Row Level Security
 ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
@@ -277,15 +285,26 @@ CREATE POLICY "Admins can delete activity images"
 -- ============================================
 
 -- Function and triggers for tracking archived_at
+-- archived_at stores the AUTO-archive time computed from date/time fields.
+-- manually_archived is a separate boolean flag for admin manual archiving.
+-- Item is considered archived if: NOW() >= archived_at  OR  manually_archived = TRUE
 CREATE OR REPLACE FUNCTION set_archived_at_from_date_time()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- If end_date and end_time are provided, use them for archived_at
-  -- Otherwise, generate archived_at from date and time + 12 hours
-  IF NEW.end_date IS NOT NULL AND NEW.end_time IS NOT NULL THEN
-    NEW.archived_at = (NEW.end_date + NEW.end_time) AT TIME ZONE 'Asia/Manila';
-  ELSE
-    NEW.archived_at = (NEW.date + NEW.time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+  -- Only recalculate archived_at on INSERT or when relevant date/time columns change.
+  IF TG_OP = 'INSERT'
+     OR OLD.date IS DISTINCT FROM NEW.date
+     OR OLD.time IS DISTINCT FROM NEW.time
+     OR OLD.end_date IS DISTINCT FROM NEW.end_date
+     OR OLD.end_time IS DISTINCT FROM NEW.end_time
+  THEN
+    -- If end_date and end_time are provided, use them for archived_at
+    -- Otherwise, generate archived_at from date and time + 12 hours
+    IF NEW.end_date IS NOT NULL AND NEW.end_time IS NOT NULL THEN
+      NEW.archived_at = (NEW.end_date + NEW.end_time) AT TIME ZONE 'Asia/Manila';
+    ELSE
+      NEW.archived_at = (NEW.date + NEW.time) AT TIME ZONE 'Asia/Manila' + interval '12 hours';
+    END IF;
   END IF;
   RETURN NEW;
 END;

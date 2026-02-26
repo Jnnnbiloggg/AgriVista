@@ -14,8 +14,12 @@ CREATE TABLE IF NOT EXISTS trainings (
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  archived_at TIMESTAMPTZ
+  archived_at TIMESTAMPTZ,
+  manually_archived BOOLEAN DEFAULT FALSE
 );
+
+-- Migration: add manually_archived column if it doesn't exist
+ALTER TABLE trainings ADD COLUMN IF NOT EXISTS manually_archived BOOLEAN DEFAULT FALSE;
 
 -- Create training_registrations table
 CREATE TABLE IF NOT EXISTS training_registrations (
@@ -195,11 +199,17 @@ CREATE POLICY "Admins can delete training images"
 -- ============================================
 
 -- Create function and trigger for trainings
+-- archived_at stores the AUTO-archive time (end_date_time + 12 hours).
+-- manually_archived is a separate boolean flag for admin manual archiving.
+-- Item is considered archived if: NOW() >= archived_at  OR  manually_archived = TRUE
 CREATE OR REPLACE FUNCTION set_archived_at_from_end_date()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Generate archived_at from end_date_time + 12 hours
-  NEW.archived_at = NEW.end_date_time + interval '12 hours';
+  -- Only recalculate archived_at when end_date_time changes (auto-archive time).
+  -- Do NOT overwrite manually_archived here.
+  IF TG_OP = 'INSERT' OR OLD.end_date_time IS DISTINCT FROM NEW.end_date_time THEN
+    NEW.archived_at = NEW.end_date_time + interval '12 hours';
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

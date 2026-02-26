@@ -23,6 +23,7 @@ export interface Activity {
   created_at: string
   updated_at: string
   archived_at: string | null
+  manually_archived?: boolean
   confirmed_count?: number
   user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
 }
@@ -55,6 +56,7 @@ export interface Appointment {
   created_at: string
   updated_at: string
   archived_at: string | null
+  manually_archived?: boolean
 }
 
 export interface PaginationOptions {
@@ -126,13 +128,17 @@ export const useActivities = () => {
       const now = new Date().toISOString()
       if (authStore.isAdmin) {
         if (showArchivedActivities.value) {
-          query = query.lte('archived_at', now)
+          // Show items that are archived: auto-archived (archived_at <= now) OR manually archived
+          query = query.or(`archived_at.lte.${now},manually_archived.eq.true`)
         } else {
-          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+          // Show items that are NOT archived: auto-archive time hasn't passed AND not manually archived
+          query = query
+            .or(`archived_at.gt.${now},archived_at.is.null`)
+            .eq('manually_archived', false)
         }
       } else {
         // Users should only see unarchived activities
-        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        query = query.or(`archived_at.gt.${now},archived_at.is.null`).eq('manually_archived', false)
       }
 
       // Search functionality
@@ -340,6 +346,79 @@ export const useActivities = () => {
     }
   }
 
+  /**
+   * Manually archive an activity (admin only).
+   * Sets manually_archived = true so it is hidden from users immediately.
+   */
+  const manuallyArchiveActivity = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const { error: updateError } = await supabase
+        .from('activities')
+        .update({ manually_archived: true })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchActivities()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error manually archiving activity:', err)
+      return { success: false, error: error.value }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Unarchive a manually-archived activity (admin only).
+   * Only allowed if the auto-archive time (archived_at) hasn't been reached yet.
+   */
+  const unarchiveActivity = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      // Fetch the latest archived_at to check if auto-archive has already fired
+      const { data: activityData, error: fetchError } = await supabase
+        .from('activities')
+        .select('archived_at, manually_archived')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      const now = new Date()
+      const autoArchiveTime = activityData?.archived_at ? new Date(activityData.archived_at) : null
+
+      if (autoArchiveTime && autoArchiveTime <= now) {
+        return {
+          success: false,
+          error: 'Cannot unarchive: the auto-archive time has already passed.',
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('activities')
+        .update({ manually_archived: false })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchActivities()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error unarchiving activity:', err)
+      return { success: false, error: error.value }
+    } finally {
+      loading.value = false
+    }
+  }
+
   // ============================================
   // BOOKINGS
   // ============================================
@@ -504,13 +583,17 @@ export const useActivities = () => {
       const now = new Date().toISOString()
       if (authStore.isAdmin) {
         if (showArchivedAppointments.value) {
-          query = query.lte('archived_at', now)
+          // Show items that are archived: auto-archived (archived_at <= now) OR manually archived
+          query = query.or(`archived_at.lte.${now},manually_archived.eq.true`)
         } else {
-          query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+          // Show items that are NOT archived: auto-archive time hasn't passed AND not manually archived
+          query = query
+            .or(`archived_at.gt.${now},archived_at.is.null`)
+            .eq('manually_archived', false)
         }
       } else {
         query = query.eq('user_id', authStore.userId)
-        query = query.or(`archived_at.gt.${now},archived_at.is.null`)
+        query = query.or(`archived_at.gt.${now},archived_at.is.null`).eq('manually_archived', false)
       }
 
       // Search functionality
@@ -616,6 +699,81 @@ export const useActivities = () => {
     } catch (err: any) {
       error.value = err.message
       console.error('Error deleting appointment:', err)
+      return { success: false, error: error.value }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Manually archive an appointment (admin only).
+   * Sets manually_archived = true so it is hidden from users immediately.
+   */
+  const manuallyArchiveAppointment = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({ manually_archived: true })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchAppointments()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error manually archiving appointment:', err)
+      return { success: false, error: error.value }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Unarchive a manually-archived appointment (admin only).
+   * Only allowed if the auto-archive time (archived_at) hasn't been reached yet.
+   */
+  const unarchiveAppointment = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      // Fetch the latest archived_at to check if auto-archive has already fired
+      const { data: appointmentData, error: fetchError } = await supabase
+        .from('appointments')
+        .select('archived_at, manually_archived')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      const now = new Date()
+      const autoArchiveTime = appointmentData?.archived_at
+        ? new Date(appointmentData.archived_at)
+        : null
+
+      if (autoArchiveTime && autoArchiveTime <= now) {
+        return {
+          success: false,
+          error: 'Cannot unarchive: the auto-archive time has already passed.',
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({ manually_archived: false })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchAppointments()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error unarchiving appointment:', err)
       return { success: false, error: error.value }
     } finally {
       loading.value = false
@@ -804,6 +962,8 @@ export const useActivities = () => {
     createActivity,
     updateActivity,
     deleteActivity,
+    manuallyArchiveActivity,
+    unarchiveActivity,
     goToActivitiesPage,
 
     // Bookings methods
@@ -822,6 +982,8 @@ export const useActivities = () => {
     createAppointment,
     updateAppointment,
     deleteAppointment,
+    manuallyArchiveAppointment,
+    unarchiveAppointment,
     goToAppointmentsPage,
 
     // Realtime

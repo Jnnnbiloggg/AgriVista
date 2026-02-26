@@ -101,17 +101,58 @@ Google OAuth is available for **regular users only** (admins must sign in with e
 
 ## Recent Updates
 
-### Archiving & Visibility (simplified per-module model)
+### Archiving & Visibility
 
-| Module            | Mechanism                             | How it works                                                                                                                   |
-| ----------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Activities**    | `archived_at` (auto)                  | Calculated via DB trigger: uses `end_date + end_time` if provided, otherwise `date + time + 12 hours`. No manual input needed. |
-| **Appointments**  | `archived_at` (auto)                  | Calculated via DB trigger: `date + time + 12 hours`. No manual input needed.                                                   |
-| **Trainings**     | `archived_at` (auto)                  | Calculated via DB trigger: `end_date_time + 12 hours`. No manual input needed.                                                 |
-| **Announcements** | `visible_until` (from duration input) | Admin sets a duration (e.g. "3 days", "Infinite"). `visible_until` is calculated from the duration.                            |
+Each module uses two complementary mechanisms — **auto-archiving** (DB trigger) and **manual archiving** (admin action) — to control item visibility.
 
-- Admins can toggle **Show Archived** to view past items.
-- Regular users only see unarchived (current) items.
+#### Auto-Archiving (DB Trigger)
+
+| Module            | Trigger field   | How `archived_at` is calculated                                                                     |
+| ----------------- | --------------- | --------------------------------------------------------------------------------------------------- |
+| **Activities**    | `archived_at`   | DB trigger: uses `end_date + end_time` if provided, otherwise `date + time + 12 hours`.             |
+| **Appointments**  | `archived_at`   | DB trigger: `date + time + 12 hours`.                                                               |
+| **Trainings**     | `archived_at`   | DB trigger: `end_date_time + 12 hours`.                                                             |
+| **Announcements** | `visible_until` | Admin sets a duration (e.g. "3 days", "Infinite"). `visible_until` is calculated from the duration. |
+
+> **Important:** The trigger only recalculates `archived_at` when the relevant date/time fields actually change, so toggling `manually_archived` does **not** reset the auto-archive timestamp.
+
+#### Manual Archiving (Admin Action)
+
+Admins can manually archive any **Activity**, **Appointment**, or **Training** at any time before the auto-archive time fires. This is useful for temporarily hiding an item (e.g., to make edits) without waiting for the scheduled auto-archive.
+
+A new boolean column `manually_archived` (default `false`) tracks this state separately from `archived_at`.
+
+**An item is considered archived if:**
+
+- `archived_at ≤ NOW()` (auto-archive time has passed), **OR**
+- `manually_archived = true` (admin has manually archived it)
+
+#### Archive / Unarchive Button Rules
+
+The following table shows exactly when each button appears for admin users in the management tables:
+
+| Item State                                               | Archive button   | Unarchive button |
+| -------------------------------------------------------- | ---------------- | ---------------- |
+| Active (not archived by any means)                       | ✅ Shown (amber) | ❌ Hidden        |
+| Manually archived, auto-archive time still in future     | ❌ Hidden        | ✅ Shown (green) |
+| Auto-archived (end time has passed, `archived_at ≤ NOW`) | ❌ Hidden        | ❌ Hidden        |
+| Manually archived **and** auto-archive time has passed   | ❌ Hidden        | ❌ Hidden        |
+
+> Once an item is auto-archived (the scheduled time has passed), it **cannot** be unarchived — it is permanently archived by the system. Manual archiving can only be reversed while the auto-archive window is still in the future.
+
+#### Show Archived Toggle
+
+- Admins can toggle **Show Archived** to view past/archived items alongside the live list.
+- The archived view shows items where `archived_at ≤ NOW()` **OR** `manually_archived = true`.
+- Regular users only ever see active (unarchived) items.
+
+#### Database Migration Required
+
+Run the migration script in your **Supabase Dashboard → SQL Editor** to add the `manually_archived` column and update the triggers:
+
+```text
+db/migrations/add_manually_archived.sql
+```
 
 ### Other changes
 
