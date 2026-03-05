@@ -397,14 +397,8 @@ export const useProducts = () => {
 
       if (createError) throw createError
 
-      // Auto-deduct stock immediately upon reservation
-      const newStock = productData.stock - order.quantity
-      const { error: stockError } = await supabase
-        .from('products')
-        .update({ stock: newStock })
-        .eq('id', order.product_id)
-
-      if (stockError) throw stockError
+      // Stock is automatically deducted by the manage_order_stock DB trigger
+      // (SECURITY DEFINER) so no manual update is needed here.
 
       await fetchOrders()
       await fetchProducts() // Refresh products to show updated stock
@@ -423,40 +417,8 @@ export const useProducts = () => {
     error.value = null
 
     try {
-      // Handle stock restoration when an order is cancelled
-      if (updates.order_status) {
-        // Retrieve existing order details including current status
-        const { data: orderData, error: orderError } = await supabase
-          .from('orders')
-          .select('product_id, quantity, order_status')
-          .eq('id', id)
-          .single()
-
-        if (orderError) throw orderError
-
-        const prevStatus = orderData.order_status
-        const newStatus = updates.order_status
-
-        // Restore stock when an order is cancelled from any active status
-        // (stock was already deducted at reservation time)
-        if (newStatus === 'cancelled' && prevStatus !== 'cancelled') {
-          const { data: productData, error: productError } = await supabase
-            .from('products')
-            .select('stock')
-            .eq('id', orderData.product_id)
-            .single()
-
-          if (productError) throw productError
-
-          const restoredStock = (productData.stock || 0) + orderData.quantity
-          const { error: stockError } = await supabase
-            .from('products')
-            .update({ stock: restoredStock })
-            .eq('id', orderData.product_id)
-
-          if (stockError) throw stockError
-        }
-      }
+      // Stock restoration on cancellation is handled automatically by the
+      // manage_order_stock DB trigger (SECURITY DEFINER).
 
       const { data, error: updateError } = await supabase
         .from('orders')
@@ -489,6 +451,7 @@ export const useProducts = () => {
       if (deleteError) throw deleteError
 
       await fetchOrders()
+      await fetchProducts()
       return { success: true }
     } catch (err: any) {
       error.value = err.message
