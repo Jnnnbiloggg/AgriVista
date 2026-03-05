@@ -172,6 +172,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (userMarker) userMarker.remove()
+  if (routeLine) routeLine.remove()
   if (map) {
     map.remove()
     map = null
@@ -224,9 +226,104 @@ const isFormValid = computed(() => {
 
 const carouselCycle = computed(() => !isHovering.value)
 
+const userLocation = ref<{ lat: number; lng: number } | null>(null)
+const isLocating = ref(false)
+const locationError = ref<string | null>(null)
+let userMarker: L.Marker | null = null
+let routeLine: L.Polyline | null = null
+
+const directionsUrl = computed(() => {
+  if (userLocation.value) {
+    return `https://www.openstreetmap.org/directions?from=${userLocation.value.lat}%2C${userLocation.value.lng}&to=${farmLocation.value.lat}%2C${farmLocation.value.lng}`
+  }
+  return `https://www.openstreetmap.org/?mlat=${farmLocation.value.lat}&mlon=${farmLocation.value.lng}#map=15/${farmLocation.value.lat}/${farmLocation.value.lng}`
+})
+
+const locateUser = () => {
+  if (!navigator.geolocation) {
+    locationError.value = 'Geolocation is not supported by your browser'
+    return
+  }
+
+  isLocating.value = true
+  locationError.value = null
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords
+      userLocation.value = { lat: latitude, lng: longitude }
+      isLocating.value = false
+
+      if (!map) return
+
+      // Remove existing user marker and route line
+      if (userMarker) {
+        userMarker.remove()
+        userMarker = null
+      }
+      if (routeLine) {
+        routeLine.remove()
+        routeLine = null
+      }
+
+      // Add user location marker
+      const userIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width: 16px; height: 16px;
+          background: #1976D2;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        "></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      })
+
+      userMarker = L.marker([latitude, longitude], { icon: userIcon })
+        .addTo(map)
+        .bindPopup('<strong>Your Location</strong>')
+        .openPopup()
+
+      // Draw a dashed line from user to farm
+      routeLine = L.polyline(
+        [
+          [latitude, longitude],
+          [farmLocation.value.lat, farmLocation.value.lng],
+        ],
+        { color: '#1976D2', weight: 2, dashArray: '6, 8', opacity: 0.8 },
+      ).addTo(map)
+
+      // Fit map to show both points
+      const bounds = L.latLngBounds(
+        [latitude, longitude],
+        [farmLocation.value.lat, farmLocation.value.lng],
+      )
+      map.fitBounds(bounds, { padding: [40, 40] })
+    },
+    (err) => {
+      isLocating.value = false
+      switch (err.code) {
+        case err.PERMISSION_DENIED:
+          locationError.value = 'Location access denied. Please allow location in browser settings.'
+          break
+        case err.POSITION_UNAVAILABLE:
+          locationError.value = 'Location information is unavailable.'
+          break
+        case err.TIMEOUT:
+          locationError.value = 'Location request timed out.'
+          break
+        default:
+          locationError.value = 'Failed to get your location.'
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+  )
+}
+
 const resetMapView = () => {
   if (map) {
-    map.setView([farmLocation.value.lat, farmLocation.value.lng], 15)
+    map.setView([farmLocation.value.lat, farmLocation.value.lng], 17)
   }
 }
 </script>
@@ -370,7 +467,30 @@ const resetMapView = () => {
                     class="map-reset-btn"
                     @click="resetMapView"
                   ></v-btn>
+
+                  <!-- Locate Me Button -->
+                  <v-btn
+                    :icon="isLocating ? undefined : 'mdi-map-marker-account'"
+                    size="small"
+                    color="primary"
+                    elevation="2"
+                    class="map-locate-btn"
+                    :loading="isLocating"
+                    @click="locateUser"
+                  ></v-btn>
                 </div>
+
+                <!-- Location Error -->
+                <v-alert
+                  v-if="locationError"
+                  type="warning"
+                  density="compact"
+                  class="mt-2"
+                  closable
+                  @click:close="locationError = null"
+                >
+                  {{ locationError }}
+                </v-alert>
 
                 <div class="mt-4">
                   <div class="d-flex align-center mb-2">
@@ -387,7 +507,7 @@ const resetMapView = () => {
                     <span class="text-body-2">{{ farmLocation.address }}</span>
                   </div>
                   <v-btn
-                    :href="`https://www.openstreetmap.org/?mlat=${farmLocation.lat}&mlon=${farmLocation.lng}#map=15/${farmLocation.lat}/${farmLocation.lng}`"
+                    :href="directionsUrl"
                     target="_blank"
                     color="primary"
                     variant="outlined"
@@ -395,7 +515,7 @@ const resetMapView = () => {
                     class="mt-3"
                     prepend-icon="mdi-directions"
                   >
-                    Get Directions
+                    {{ userLocation ? 'Get Directions from My Location' : 'Get Directions' }}
                   </v-btn>
                 </div>
               </v-card-text>
@@ -660,6 +780,14 @@ const resetMapView = () => {
 .map-reset-btn {
   position: absolute;
   top: 10px;
+  right: 10px;
+  z-index: 1000;
+}
+
+.map-locate-btn {
+  position: absolute;
+  margin-top: 5px;
+  top: 50px;
   right: 10px;
   z-index: 1000;
 }
