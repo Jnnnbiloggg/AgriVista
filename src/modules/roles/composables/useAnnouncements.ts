@@ -268,7 +268,7 @@ export const useAnnouncements = () => {
       }
 
       // Calculate visible_until if duration is updated
-      let visible_until_update: { visible_until?: string | null } = {}
+      const visible_until_update: { visible_until?: string | null } = {}
       if (updates.duration) {
         if (updates.duration.toLowerCase() === 'infinite') {
           visible_until_update.visible_until = null

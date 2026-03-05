@@ -38,6 +38,12 @@ const adminNavigationItems = [
     icon: 'mdi-package-variant',
   },
   {
+    title: 'Inventory Dashboard',
+    id: 'admin-inventory',
+    route: '/admin/inventory',
+    icon: 'mdi-chart-box-outline',
+  },
+  {
     title: 'Trainings and Workshop',
     id: 'admin-trainings',
     route: '/admin/trainings',

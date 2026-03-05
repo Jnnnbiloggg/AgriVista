@@ -121,6 +121,13 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdmin: true },
         },
         {
+          path: 'inventory',
+          name: 'admin-inventory',
+          component: () => import('@/modules/roles/components/InventoryDashboard.vue'),
+          props: { userType: 'admin' },
+          meta: { requiresAuth: true, requiresAdmin: true },
+        },
+        {
           path: 'trainings',
           name: 'admin-trainings',
           component: () => import('@/modules/roles/components/Trainings.vue'),
