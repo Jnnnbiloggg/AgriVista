@@ -249,6 +249,7 @@ const appointmentDialog = useFormDialog<{
   appointment_type: string
   date: string
   time_slot: 'AM' | 'PM'
+  party_size: number
   note: string
 }>({
   initialData: () => ({
@@ -258,11 +259,15 @@ const appointmentDialog = useFormDialog<{
     appointment_type: '',
     date: '',
     time_slot: 'AM',
+    party_size: 1,
     note: '',
   }),
   validate: (data) => {
     if (!data.contact_number || !data.appointment_type || !data.date || !data.time_slot) {
       return { valid: false, message: 'Please fill in all required fields' }
+    }
+    if (data.party_size < 1) {
+      return { valid: false, message: 'Party size must be at least 1' }
     }
     return { valid: true }
   },
@@ -287,8 +292,10 @@ const appointmentDialog = useFormDialog<{
 // Booking dialog (user) - simplified single action
 const selectedActivity = ref<any | null>(null)
 const showBookingDialog = ref(false)
+const bookingPartySize = ref(1)
 const openBookingDialog = (activity: any) => {
   selectedActivity.value = activity
+  bookingPartySize.value = 1
   showBookingDialog.value = true
 }
 const confirmBooking = async () => {
@@ -299,6 +306,7 @@ const confirmBooking = async () => {
       activity_id: selectedActivity.value.id,
       activity_name: selectedActivity.value.name,
       booking_date: today,
+      party_size: bookingPartySize.value,
       status: 'pending',
     })
     if (result.success) {
@@ -348,17 +356,21 @@ const isBookingDisabled = (activity: any) => {
 }
 
 const isActivityFull = (activity: any) => {
-  return (activity.confirmed_count || 0) >= activity.capacity
+  return (activity.booked_count || 0) >= activity.capacity
+}
+
+const getRemainingSpots = (activity: any) => {
+  return Math.max(0, activity.capacity - (activity.booked_count || 0))
 }
 
 const getCapacityText = (activity: any) => {
-  const confirmed = activity.confirmed_count || 0
-  return `${confirmed}/${activity.capacity}`
+  const booked = activity.booked_count || 0
+  return `${booked}/${activity.capacity}`
 }
 
 const getCapacityColor = (activity: any) => {
-  const confirmed = activity.confirmed_count || 0
-  const percentage = (confirmed / activity.capacity) * 100
+  const booked = activity.booked_count || 0
+  const percentage = (booked / activity.capacity) * 100
   if (percentage >= 100) return 'error'
   if (percentage >= 75) return 'warning'
   return 'success'
@@ -467,23 +479,9 @@ const updateBookingStatus = async (
   status: 'pending' | 'confirmed' | 'cancelled',
 ) => {
   try {
-    // If confirming a booking, check if activity is full
-    if (status === 'confirmed') {
-      const booking = bookings.value.find((b) => b.id === bookingId)
-      if (booking) {
-        const activity = activities.value.find((a) => a.id === booking.activity_id)
-        if (activity && isActivityFull(activity)) {
-          showSnackbar('Cannot confirm booking - activity is at full capacity', 'error')
-          return
-        }
-      }
-    }
-
     const result = await updateBooking(bookingId, { status })
     if (result.success) {
       showSnackbar(`Booking ${status} successfully!`, 'success')
-      // Refresh activities to update confirmed count
-      await fetchActivities()
     } else {
       showSnackbar(result.error || 'Failed to update booking status', 'error')
     }
@@ -560,8 +558,6 @@ const cancelUserBooking = async (bookingId: number) => {
     const result = await updateBooking(bookingId, { status: 'cancelled' })
     if (result.success) {
       showSnackbar('Booking cancelled successfully!', 'success')
-      // Refresh activities to update user_booking_status
-      await fetchActivities()
     } else {
       showSnackbar(result.error || 'Failed to cancel booking', 'error')
     }
@@ -575,7 +571,6 @@ const cancelUserAppointment = async (appointmentId: number) => {
     const result = await updateAppointment(appointmentId, { status: 'cancelled' })
     if (result.success) {
       showSnackbar('Appointment cancelled successfully!', 'success')
-      await fetchAppointments()
     } else {
       showSnackbar(result.error || 'Failed to cancel appointment', 'error')
     }
@@ -588,8 +583,7 @@ const activityHeaders = [
   { title: 'Activity', key: 'name' },
   { title: 'Type', key: 'type' },
   { title: 'Date & Time', key: 'date' },
-  { title: 'Capacity', key: 'capacity' },
-  { title: 'Confirmed', key: 'confirmed_count' },
+  { title: 'Booked / Capacity', key: 'booked_count' },
   { title: 'Location', key: 'location' },
   { title: 'Actions', key: 'actions' },
 ]
@@ -598,6 +592,7 @@ const bookingHeaders = [
   { title: 'Activity Name', key: 'activity_name' },
   { title: 'User Name', key: 'user_name' },
   { title: 'Email', key: 'user_email' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Booking Date', key: 'booking_date' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -607,6 +602,7 @@ const appointmentHeaders = [
   { title: 'Full Name', key: 'full_name' },
   { title: 'Contact', key: 'contact_number' },
   { title: 'Type', key: 'appointment_type' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Date & Time', key: 'date' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -614,6 +610,7 @@ const appointmentHeaders = [
 
 const userBookingHeaders = [
   { title: 'Activity Name', key: 'activity_name' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Booking Date', key: 'booking_date' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -621,6 +618,7 @@ const userBookingHeaders = [
 
 const userAppointmentHeaders = [
   { title: 'Type', key: 'appointment_type' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Date & Time', key: 'date' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -830,9 +828,12 @@ const handleUnarchiveAppointment = async (item: any) => {
                       >
                         {{ getCapacityText(activity) }}
                       </v-chip>
-                      <span class="text-caption text-grey-darken-1">
-                        {{ isActivityFull(activity) ? 'Fully Booked' : 'Available' }}
-                      </span>
+                      <span v-if="isActivityFull(activity)" class="text-error text-caption"
+                        >(Fully Booked)</span
+                      >
+                      <span v-else class="text-success text-caption"
+                        >({{ getRemainingSpots(activity) }} spots left)</span
+                      >
                     </div>
                   </div>
                 </v-card-text>
@@ -1196,10 +1197,10 @@ const handleUnarchiveAppointment = async (item: any) => {
                       </div>
                     </template>
 
-                    <template v-slot:item.confirmed_count="{ item }">
+                    <template v-slot:item.booked_count="{ item }">
                       <div class="d-flex align-center">
                         <v-chip :color="getCapacityColor(item)" size="small" variant="tonal">
-                          {{ item.confirmed_count || 0 }} / {{ item.capacity }}
+                          {{ item.booked_count || 0 }} / {{ item.capacity }}
                         </v-chip>
                         <v-icon
                           v-if="isActivityFull(item)"
@@ -1668,6 +1669,20 @@ const handleUnarchiveAppointment = async (item: any) => {
               </v-col>
 
               <v-col cols="12">
+                <v-text-field
+                  v-model.number="appointmentDialog.formData.value.party_size"
+                  label="How many people? (including yourself) *"
+                  type="number"
+                  :min="1"
+                  variant="outlined"
+                  required
+                  prepend-inner-icon="mdi-account-multiple"
+                  hint="Enter the total number of people in your group"
+                  persistent-hint
+                ></v-text-field>
+              </v-col>
+
+              <v-col cols="12">
                 <v-textarea
                   v-model="appointmentDialog.formData.value.note"
                   label="Note/Request"
@@ -1745,13 +1760,32 @@ const handleUnarchiveAppointment = async (item: any) => {
                     (Fully Booked)
                   </span>
                   <span v-else class="text-success text-caption">
-                    ({{ selectedActivity.capacity - (selectedActivity.confirmed_count || 0) }} spots
-                    left)
+                    ({{ getRemainingSpots(selectedActivity) }} spots left)
                   </span>
                 </div>
               </v-list-item-title>
             </v-list-item>
           </v-list>
+
+          <v-divider class="my-4"></v-divider>
+
+          <v-text-field
+            v-model.number="bookingPartySize"
+            label="How many people? (including yourself)"
+            type="number"
+            :min="1"
+            :max="getRemainingSpots(selectedActivity)"
+            variant="outlined"
+            prepend-inner-icon="mdi-account-multiple"
+            hint="Enter the total number of people in your group"
+            persistent-hint
+            :rules="[
+              (v: number) => v >= 1 || 'At least 1 person required',
+              (v: number) =>
+                v <= getRemainingSpots(selectedActivity) ||
+                `Only ${getRemainingSpots(selectedActivity)} spot(s) remaining`,
+            ]"
+          ></v-text-field>
         </v-card-text>
 
         <v-card-actions class="px-6 pb-6">

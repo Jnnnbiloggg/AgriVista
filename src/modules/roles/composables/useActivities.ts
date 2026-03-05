@@ -24,8 +24,10 @@ export interface Activity {
   updated_at: string
   archived_at: string | null
   manually_archived?: boolean
+  booked_count?: number
   confirmed_count?: number
   user_booking_status?: 'pending' | 'confirmed' | 'cancelled' | null
+  user_party_size?: number
 }
 
 export interface Booking {
@@ -36,6 +38,7 @@ export interface Booking {
   user_name: string
   user_email: string
   booking_date: string
+  party_size: number
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
@@ -51,6 +54,7 @@ export interface Appointment {
   appointment_type: string
   date: string
   time_slot: 'AM' | 'PM'
+  party_size: number
   note: string | null
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
@@ -162,33 +166,49 @@ export const useActivities = () => {
 
       if (fetchError) throw fetchError
 
-      // Fetch confirmed bookings count and user's booking status for each activity
+      // Fetch booked count (sum of party_size for non-cancelled) and user's booking status
       const activitiesWithBookingInfo = await Promise.all(
         (data || []).map(async (activity) => {
-          // Get confirmed bookings count
-          const { count: confirmedCount } = await supabase
+          // Get total booked count (pending + confirmed) by summing party_size
+          const { data: activeBookings } = await supabase
             .from('bookings')
-            .select('*', { count: 'exact', head: true })
+            .select('party_size')
+            .eq('activity_id', activity.id)
+            .in('status', ['pending', 'confirmed'])
+
+          const bookedCount = activeBookings?.reduce((sum, b) => sum + (b.party_size || 1), 0) || 0
+
+          // Get confirmed count only
+          const { data: confirmedBookings } = await supabase
+            .from('bookings')
+            .select('party_size')
             .eq('activity_id', activity.id)
             .eq('status', 'confirmed')
 
+          const confirmedCount =
+            confirmedBookings?.reduce((sum, b) => sum + (b.party_size || 1), 0) || 0
+
           // Get user's booking status if not admin
           let userBookingStatus = null
+          let userPartySize = 0
           if (!authStore.isAdmin) {
             const { data: userBooking } = await supabase
               .from('bookings')
-              .select('status')
+              .select('status, party_size')
               .eq('activity_id', activity.id)
               .eq('user_id', authStore.userId)
               .maybeSingle()
 
             userBookingStatus = userBooking?.status || null
+            userPartySize = userBooking?.party_size || 0
           }
 
           return {
             ...activity,
-            confirmed_count: confirmedCount || 0,
+            booked_count: bookedCount,
+            confirmed_count: confirmedCount,
             user_booking_status: userBookingStatus,
+            user_party_size: userPartySize,
           }
         }),
       )
@@ -498,11 +518,38 @@ export const useActivities = () => {
     error.value = null
 
     try {
+      const partySize = booking.party_size || 1
+
+      // Check current capacity before creating booking
+      const { data: activeBookings } = await supabase
+        .from('bookings')
+        .select('party_size')
+        .eq('activity_id', booking.activity_id)
+        .in('status', ['pending', 'confirmed'])
+
+      const currentBooked = activeBookings?.reduce((sum, b) => sum + (b.party_size || 1), 0) || 0
+
+      // Get activity capacity
+      const { data: activityData, error: activityError } = await supabase
+        .from('activities')
+        .select('capacity')
+        .eq('id', booking.activity_id)
+        .single()
+
+      if (activityError) throw activityError
+
+      if (currentBooked + partySize > activityData.capacity) {
+        throw new Error(
+          `Not enough capacity. Only ${Math.max(0, activityData.capacity - currentBooked)} spot(s) remaining.`,
+        )
+      }
+
       const { data, error: createError } = await supabase
         .from('bookings')
         .insert([
           {
             ...booking,
+            party_size: partySize,
             user_id: authStore.userId,
             user_name: authStore.fullName,
             user_email: authStore.userEmail,
@@ -514,6 +561,7 @@ export const useActivities = () => {
       if (createError) throw createError
 
       await fetchBookings()
+      await fetchActivities() // Refresh activities to show updated capacity
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
@@ -539,6 +587,7 @@ export const useActivities = () => {
       if (updateError) throw updateError
 
       await fetchBookings()
+      await fetchActivities() // Refresh activities to update capacity counts
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
@@ -646,11 +695,25 @@ export const useActivities = () => {
     error.value = null
 
     try {
+      const partySize = appointment.party_size || 1
+
+      // Check available slots before creating appointment
+      const slot = appointmentSlots.value.find(
+        (s) => s.date === appointment.date && s.time_slot === appointment.time_slot,
+      )
+
+      if (!slot || slot.available_slots < partySize) {
+        throw new Error(
+          `Not enough slots available. Only ${slot?.available_slots || 0} slot(s) remaining.`,
+        )
+      }
+
       const { data, error: createError } = await supabase
         .from('appointments')
         .insert([
           {
             ...appointment,
+            party_size: partySize,
             user_id: authStore.userId,
           },
         ])
@@ -660,6 +723,7 @@ export const useActivities = () => {
       if (createError) throw createError
 
       await fetchAppointments()
+      await fetchAppointmentSlots() // Refresh slots to show updated availability
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
@@ -685,6 +749,7 @@ export const useActivities = () => {
       if (updateError) throw updateError
 
       await fetchAppointments()
+      await fetchAppointmentSlots() // Refresh slots to show updated availability
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message

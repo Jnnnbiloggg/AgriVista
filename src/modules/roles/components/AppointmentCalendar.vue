@@ -347,7 +347,7 @@ const selectedDayData = computed(() => {
                       class="d-flex align-center justify-space-between py-3 px-4 rounded-lg"
                     >
                       <div class="d-flex flex-column" style="width: 100%">
-                        <div class="d-flex justify-space-between align-center mb-1">
+                        <div class="d-flex justify-space-between align-center gap-4 mb-3">
                           <span class="font-weight-bold text-subtitle-1"
                             ><v-icon
                               icon="mdi-white-balance-sunny"
@@ -363,7 +363,7 @@ const selectedDayData = computed(() => {
                             {{ selectedDayData?.remAM ?? 0 }} Left
                           </v-chip>
                         </div>
-                        <div class="d-flex justify-space-between align-center mt-1">
+                        <div class="d-flex justify-space-between align-center gap-4 mt-1">
                           <span class="text-caption">Morning Appointments</span>
                           <v-btn
                             v-if="(selectedDayData?.remAM ?? 0) > 0"
@@ -385,7 +385,7 @@ const selectedDayData = computed(() => {
                       class="d-flex align-center justify-space-between py-3 px-4 rounded-lg"
                     >
                       <div class="d-flex flex-column" style="width: 100%">
-                        <div class="d-flex justify-space-between align-center mb-1">
+                        <div class="d-flex justify-space-between align-center gap-4 mb-3">
                           <span class="font-weight-bold text-subtitle-1"
                             ><v-icon icon="mdi-weather-night" size="small" class="mr-1"></v-icon> PM
                             Slots</span
@@ -397,7 +397,7 @@ const selectedDayData = computed(() => {
                             {{ selectedDayData?.remPM ?? 0 }} Left
                           </v-chip>
                         </div>
-                        <div class="d-flex justify-space-between align-center mt-1">
+                        <div class="d-flex justify-space-between align-center gap-4 mt-1">
                           <span class="text-caption">Afternoon Appointments</span>
                           <v-btn
                             v-if="(selectedDayData?.remPM ?? 0) > 0"

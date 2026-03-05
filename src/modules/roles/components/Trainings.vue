@@ -263,6 +263,7 @@ const trainingDialog = useFormDialog<TrainingForm>({
 
 // Registration dialog (user) - kept simple as single confirmation
 const showRegisterDialog = ref(false)
+const registrationPartySize = ref(1)
 
 // Load data on component mount
 onMounted(async () => {
@@ -398,6 +399,7 @@ const downloadRegistrations = () => {
 // User functions
 const openRegisterDialog = (training: any) => {
   selectedTraining.value = training
+  registrationPartySize.value = 1
   showRegisterDialog.value = true
 }
 
@@ -408,6 +410,7 @@ const confirmRegistration = async () => {
     const result = await createRegistration({
       training_id: selectedTraining.value.id,
       training_name: selectedTraining.value.name,
+      party_size: registrationPartySize.value,
       status: 'pending',
     })
 
@@ -439,7 +442,7 @@ const trainingHeaders = [
   { title: 'Training', key: 'name' },
   { title: 'Location', key: 'location' },
   { title: 'Start Date & Time', key: 'start_date_time' },
-  { title: 'Capacity', key: 'capacity' },
+  { title: 'Booked / Capacity', key: 'capacity' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
 ]
@@ -448,6 +451,7 @@ const registrationHeaders = [
   { title: 'Training Name', key: 'training_name' },
   { title: 'Participant', key: 'user_name' },
   { title: 'Email', key: 'user_email' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Registered Date', key: 'created_at' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -455,6 +459,7 @@ const registrationHeaders = [
 
 const userRegistrationHeaders = [
   { title: 'Training Name', key: 'training_name' },
+  { title: 'Party Size', key: 'party_size' },
   { title: 'Registered Date', key: 'created_at' },
   { title: 'Status', key: 'status' },
   { title: 'Actions', key: 'actions' },
@@ -538,20 +543,24 @@ const getTrainingStatusColor = (training: any) => {
 }
 
 const getCapacityText = (training: any) => {
-  const confirmed = training.confirmed_count || 0
-  return `${confirmed}/${training.capacity}`
+  const booked = training.booked_count || 0
+  return `${booked}/${training.capacity}`
 }
 
 const getCapacityColor = (training: any) => {
-  const confirmed = training.confirmed_count || 0
-  const percentage = (confirmed / training.capacity) * 100
+  const booked = training.booked_count || 0
+  const percentage = (booked / training.capacity) * 100
   if (percentage >= 100) return 'error'
   if (percentage >= 75) return 'warning'
   return 'success'
 }
 
 const isTrainingFull = (training: any) => {
-  return (training.confirmed_count || 0) >= training.capacity
+  return (training.booked_count || 0) >= training.capacity
+}
+
+const getRemainingSpots = (training: any) => {
+  return Math.max(0, training.capacity - (training.booked_count || 0))
 }
 
 const getRegisterButtonText = (training: any) => {
@@ -1066,6 +1075,12 @@ const cancelUserRegistration = async (registrationId: number) => {
                     >
                       {{ getCapacityText(training) }}
                     </v-chip>
+                    <span v-if="isTrainingFull(training)" class="text-error text-caption ml-2"
+                      >(Fully Booked)</span
+                    >
+                    <span v-else class="text-success text-caption ml-2"
+                      >({{ getRemainingSpots(training) }} spots left)</span
+                    >
                   </div>
 
                   <div class="mb-3">
@@ -1371,10 +1386,48 @@ const cancelUserRegistration = async (registrationId: number) => {
               <v-icon icon="mdi-calendar" size="small" class="mr-1"></v-icon>
               <span>{{ formatDateTime(selectedTraining.start_date_time) }}</span>
             </div>
-            <div class="mb-4">
+            <div class="mb-2">
               <v-icon icon="mdi-clock-outline" size="small" class="mr-1"></v-icon>
               <span>{{ formatDateTime(selectedTraining.end_date_time) }}</span>
             </div>
+            <div class="mb-4">
+              <v-icon icon="mdi-account-group" size="small" class="mr-1"></v-icon>
+              <span>Capacity: </span>
+              <v-chip
+                :color="getCapacityColor(selectedTraining)"
+                size="small"
+                variant="tonal"
+                class="ml-1"
+              >
+                {{ getCapacityText(selectedTraining) }}
+              </v-chip>
+              <span v-if="isTrainingFull(selectedTraining)" class="text-error text-caption ml-2"
+                >(Fully Booked)</span
+              >
+              <span v-else class="text-success text-caption ml-2"
+                >({{ getRemainingSpots(selectedTraining) }} spots left)</span
+              >
+            </div>
+
+            <v-divider class="my-4"></v-divider>
+
+            <v-text-field
+              v-model.number="registrationPartySize"
+              label="How many people? (including yourself)"
+              type="number"
+              :min="1"
+              :max="getRemainingSpots(selectedTraining)"
+              variant="outlined"
+              prepend-inner-icon="mdi-account-multiple"
+              hint="Enter the total number of people in your group"
+              persistent-hint
+              :rules="[
+                (v: number) => v >= 1 || 'At least 1 person required',
+                (v: number) =>
+                  v <= getRemainingSpots(selectedTraining) ||
+                  `Only ${getRemainingSpots(selectedTraining)} spot(s) remaining`,
+              ]"
+            ></v-text-field>
 
             <v-alert type="info" variant="tonal" class="mt-4">
               You are registering as: <strong>{{ userName }}</strong> ({{ userEmail }})
@@ -1392,7 +1445,12 @@ const cancelUserRegistration = async (registrationId: number) => {
           <v-btn
             color="primary"
             variant="elevated"
-            :disabled="selectedTraining && isTrainingCompleted(selectedTraining)"
+            :disabled="
+              selectedTraining &&
+              (isTrainingCompleted(selectedTraining) ||
+                registrationPartySize < 1 ||
+                registrationPartySize > getRemainingSpots(selectedTraining))
+            "
             @click="confirmRegistration"
           >
             Register

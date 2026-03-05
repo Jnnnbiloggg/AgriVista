@@ -21,8 +21,10 @@ export interface Training {
   updated_at: string
   archived_at?: string | null
   manually_archived?: boolean
+  booked_count?: number
   confirmed_count?: number
   user_registration_status?: 'pending' | 'confirmed' | 'cancelled' | null
+  user_party_size?: number
 }
 
 export interface TrainingRegistration {
@@ -32,6 +34,7 @@ export interface TrainingRegistration {
   user_id: string
   user_name: string
   user_email: string
+  party_size: number
   status: 'pending' | 'confirmed' | 'cancelled'
   created_at: string
   updated_at: string
@@ -126,33 +129,49 @@ function useTrainings() {
 
       if (fetchError) throw fetchError
 
-      // Fetch confirmed registration counts and user's registration status for each training
+      // Fetch booked count (sum of party_size for non-cancelled) and user's registration status
       const trainingsWithInfo = await Promise.all(
         (data || []).map(async (training) => {
-          // Get confirmed registrations count
-          const { count: confirmedCount } = await supabase
+          // Get total booked count (pending + confirmed) by summing party_size
+          const { data: activeRegs } = await supabase
             .from('training_registrations')
-            .select('*', { count: 'exact', head: true })
+            .select('party_size')
+            .eq('training_id', training.id)
+            .in('status', ['pending', 'confirmed'])
+
+          const bookedCount = activeRegs?.reduce((sum, r) => sum + (r.party_size || 1), 0) || 0
+
+          // Get confirmed count only
+          const { data: confirmedRegs } = await supabase
+            .from('training_registrations')
+            .select('party_size')
             .eq('training_id', training.id)
             .eq('status', 'confirmed')
 
+          const confirmedCount =
+            confirmedRegs?.reduce((sum, r) => sum + (r.party_size || 1), 0) || 0
+
           // Get user's registration status if user is logged in and not admin
           let userRegistrationStatus = null
+          let userPartySize = 0
           if (!authStore.isAdmin && authStore.userId) {
             const { data: userReg } = await supabase
               .from('training_registrations')
-              .select('status')
+              .select('status, party_size')
               .eq('training_id', training.id)
               .eq('user_id', authStore.userId)
               .maybeSingle()
 
             userRegistrationStatus = userReg?.status || null
+            userPartySize = userReg?.party_size || 0
           }
 
           return {
             ...training,
-            confirmed_count: confirmedCount || 0,
+            booked_count: bookedCount,
+            confirmed_count: confirmedCount,
             user_registration_status: userRegistrationStatus,
+            user_party_size: userPartySize,
           }
         }),
       )
@@ -453,11 +472,38 @@ function useTrainings() {
     error.value = null
 
     try {
+      const partySize = registration.party_size || 1
+
+      // Check current capacity before creating registration
+      const { data: activeRegs } = await supabase
+        .from('training_registrations')
+        .select('party_size')
+        .eq('training_id', registration.training_id)
+        .in('status', ['pending', 'confirmed'])
+
+      const currentBooked = activeRegs?.reduce((sum, r) => sum + (r.party_size || 1), 0) || 0
+
+      // Get training capacity
+      const { data: trainingData, error: trainingError } = await supabase
+        .from('trainings')
+        .select('capacity')
+        .eq('id', registration.training_id)
+        .single()
+
+      if (trainingError) throw trainingError
+
+      if (currentBooked + partySize > trainingData.capacity) {
+        throw new Error(
+          `Not enough capacity. Only ${Math.max(0, trainingData.capacity - currentBooked)} spot(s) remaining.`,
+        )
+      }
+
       const { data, error: insertError } = await supabase
         .from('training_registrations')
         .insert([
           {
             ...registration,
+            party_size: partySize,
             user_id: authStore.userId,
             user_name: authStore.fullName,
             user_email: authStore.userEmail,
@@ -469,6 +515,7 @@ function useTrainings() {
       if (insertError) throw insertError
 
       await fetchRegistrations()
+      await fetchTrainings() // Refresh trainings to show updated capacity
       return { success: true, data }
     } catch (err: any) {
       error.value = err.message
