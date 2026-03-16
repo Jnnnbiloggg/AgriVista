@@ -14,6 +14,7 @@ export interface Announcement {
   created_at: string
   updated_at: string
   visible_until: string | null
+  manually_archived?: boolean
 }
 
 export interface PaginationOptions {
@@ -29,6 +30,7 @@ export const useAnnouncements = () => {
   const error = ref<string | null>(null)
   const totalCount = ref(0)
   const searchQuery = ref('')
+  const showArchivedAnnouncements = ref(false)
 
   let realtimeChannel: RealtimeChannel | null = null
 
@@ -77,9 +79,16 @@ export const useAnnouncements = () => {
       // Filter visible announcements for users
       const { data: userData } = await supabase.auth.getUser()
       const isUserAdmin = await supabase.rpc('is_admin', { user_email: userData.user?.email })
-      if (!isUserAdmin.data) {
-        const now = new Date().toISOString()
-        query = query.or(`visible_until.gt.${now},visible_until.is.null`)
+      const now = new Date().toISOString()
+
+      if (isUserAdmin.data) {
+        if (showArchivedAnnouncements.value) {
+          query = query.or(`visible_until.lte.${now},manually_archived.eq.true`)
+        } else {
+          query = query.or(`visible_until.gt.${now},visible_until.is.null`).eq('manually_archived', false)
+        }
+      } else {
+        query = query.or(`visible_until.gt.${now},visible_until.is.null`).eq('manually_archived', false)
       }
 
       // Apply pagination
@@ -168,7 +177,7 @@ export const useAnnouncements = () => {
   const createAnnouncement = async (
     announcement: Omit<
       Announcement,
-      'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until'
+      'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until' | 'manually_archived'
     >,
     imageFile: File | null = null,
   ) => {
@@ -243,7 +252,7 @@ export const useAnnouncements = () => {
   const updateAnnouncement = async (
     id: number,
     updates: Partial<
-      Omit<Announcement, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until'>
+      Omit<Announcement, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'visible_until' | 'manually_archived'>
     >,
     imageFile: File | null = null,
   ) => {
@@ -350,6 +359,76 @@ export const useAnnouncements = () => {
       error.value = err.message
       console.error('Error deleting announcement:', err)
       return { success: false, error: err.message }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Manually archive an announcement (admin only).
+   */
+  const manuallyArchiveAnnouncement = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const { error: updateError } = await supabase
+        .from('announcements')
+        .update({ manually_archived: true })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchAnnouncements()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error manually archiving announcement:', err)
+      return { success: false, error: error.value }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Unarchive a manually-archived announcement (admin only).
+   */
+  const unarchiveAnnouncement = async (id: number) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const { data: announcementData, error: fetchError } = await supabase
+        .from('announcements')
+        .select('visible_until')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      const now = new Date()
+      const autoArchiveTime = announcementData?.visible_until ? new Date(announcementData.visible_until) : null
+
+      if (autoArchiveTime && autoArchiveTime <= now) {
+        return {
+          success: false,
+          error: 'Cannot unarchive: the duration has already passed.',
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('announcements')
+        .update({ manually_archived: false })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      await fetchAnnouncements()
+      return { success: true }
+    } catch (err: any) {
+      error.value = err.message
+      console.error('Error unarchiving announcement:', err)
+      return { success: false, error: error.value }
     } finally {
       loading.value = false
     }
@@ -486,5 +565,8 @@ export const useAnnouncements = () => {
     deleteAnnouncement,
     setupRealtimeSubscription,
     unsubscribeRealtime,
+    showArchivedAnnouncements,
+    manuallyArchiveAnnouncement,
+    unarchiveAnnouncement,
   }
 }

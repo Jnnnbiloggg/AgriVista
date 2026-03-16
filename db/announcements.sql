@@ -10,8 +10,12 @@ CREATE TABLE IF NOT EXISTS announcements (
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  visible_until TIMESTAMPTZ
+  visible_until TIMESTAMPTZ,
+  manually_archived BOOLEAN DEFAULT FALSE
 );
+
+-- Migration: add manually_archived column if it doesn't exist
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS manually_archived BOOLEAN DEFAULT FALSE;
 
 -- Enable Row Level Security
 ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;

@@ -51,6 +51,9 @@ const {
   updateAnnouncement,
   deleteAnnouncement,
   setupRealtimeSubscription,
+  showArchivedAnnouncements,
+  manuallyArchiveAnnouncement,
+  unarchiveAnnouncement,
 } = useAnnouncements()
 
 // Infinite scroll for user announcements view
@@ -268,6 +271,36 @@ const closeAnnouncementDialog = () => {
   selectedAnnouncement.value = null
   showAnnouncementDialog.value = false
 }
+
+// ========================
+// MANUAL ARCHIVE HELPERS
+// ========================
+
+/** True if admin has manually archived this announcement */
+const isManuallyArchivedAnnouncement = (item: any) => !!item?.manually_archived
+/** True if the auto-archive time has already passed (unarchive is blocked) */
+const isAutoArchivedAnnouncement = (item: any) => {
+  if (!item?.visible_until) return false
+  return new Date(item.visible_until) <= new Date()
+}
+
+const handleArchiveAnnouncement = async (item: any) => {
+  const result = await manuallyArchiveAnnouncement(item.id)
+  if (result.success) {
+    showSnackbar('Announcement archived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to archive announcement', 'error')
+  }
+}
+
+const handleUnarchiveAnnouncement = async (item: any) => {
+  const result = await unarchiveAnnouncement(item.id)
+  if (result.success) {
+    showSnackbar('Announcement unarchived successfully', 'success')
+  } else {
+    showSnackbar(result.error || 'Failed to unarchive announcement', 'error')
+  }
+}
 </script>
 
 <template>
@@ -404,6 +437,15 @@ const closeAnnouncementDialog = () => {
                   </div>
                 </div>
                 <div class="d-flex flex-column gap-2">
+                  <v-switch
+                    v-model="showArchivedAnnouncements"
+                    label="Show Archived"
+                    color="primary"
+                    hide-details
+                    density="compact"
+                    class="mb-2"
+                    @change="fetchAnnouncements()"
+                  ></v-switch>
                   <v-btn
                     color="primary"
                     prepend-icon="mdi-plus"
@@ -433,6 +475,15 @@ const closeAnnouncementDialog = () => {
                   >
                 </div>
                 <div class="d-flex align-center gap-2">
+                  <v-switch
+                    v-model="showArchivedAnnouncements"
+                    label="Show Archived"
+                    color="primary"
+                    hide-details
+                    density="compact"
+                    class="mr-2"
+                    @change="fetchAnnouncements()"
+                  ></v-switch>
                   <v-pagination
                     v-if="announcements.length > 0"
                     v-model="currentPage"
@@ -533,6 +584,28 @@ const closeAnnouncementDialog = () => {
                     color="primary"
                     @click="handleEditAnnouncement(item)"
                   ></v-btn>
+                  <v-btn
+                    v-if="!isAutoArchivedAnnouncement(item) && !isManuallyArchivedAnnouncement(item)"
+                    icon="mdi-archive-arrow-down"
+                    size="small"
+                    variant="text"
+                    color="warning"
+                    @click="handleArchiveAnnouncement(item)"
+                  >
+                    <v-icon>mdi-archive-arrow-down</v-icon>
+                    <v-tooltip activator="parent" location="top">Archive Announcement</v-tooltip>
+                  </v-btn>
+                  <v-btn
+                    v-else-if="isManuallyArchivedAnnouncement(item) && !isAutoArchivedAnnouncement(item)"
+                    icon="mdi-archive-arrow-up"
+                    size="small"
+                    variant="text"
+                    color="success"
+                    @click="handleUnarchiveAnnouncement(item)"
+                  >
+                    <v-icon>mdi-archive-arrow-up</v-icon>
+                    <v-tooltip activator="parent" location="top">Unarchive Announcement</v-tooltip>
+                  </v-btn>
                   <v-btn
                     icon="mdi-delete"
                     size="small"
