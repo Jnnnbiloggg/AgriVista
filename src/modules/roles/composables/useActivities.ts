@@ -263,7 +263,8 @@ export const useActivities = () => {
 
       // Sanitize optional fields: convert empty strings to null
       // Also exclude computed properties that aren't in the database
-      const { confirmed_count, user_booking_status, ...dbActivity } = activity as any
+      const { confirmed_count, user_booking_status, booked_count, user_party_size, ...dbActivity } =
+        activity as any
 
       const sanitizedActivity = {
         ...dbActivity,
@@ -315,7 +316,8 @@ export const useActivities = () => {
 
       // Sanitize optional fields: convert empty strings to null
       // Also exclude computed properties that aren't in the database
-      const { confirmed_count, user_booking_status, ...dbUpdates } = updates as any
+      const { confirmed_count, user_booking_status, booked_count, user_party_size, ...dbUpdates } =
+        updates as any
 
       const sanitizedUpdates = {
         ...dbUpdates,
@@ -986,7 +988,7 @@ export const useActivities = () => {
           table: 'activities',
         },
         async (payload) => {
-          console.log('Activities change received:', payload)
+          // console.log('Activities change received:', payload)
           await fetchActivities()
         },
       )

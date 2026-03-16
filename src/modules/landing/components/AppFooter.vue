@@ -126,6 +126,14 @@ const handleSubscribe = async () => {
             >
               {{ item.title }}
             </a>
+            <a
+              href="https://www.facebook.com/profile.php?id=100068366555235"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="nav-link mb-2"
+            >
+              Facebook
+            </a>
           </div>
         </v-col>
 
