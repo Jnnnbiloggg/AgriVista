@@ -2,15 +2,13 @@
 import { ref, computed, onMounted, onBeforeUnmount, inject, type Ref } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { useRouter } from 'vue-router'
 import { useDashboard } from '../composables/useDashboard'
+import { useAnnouncements } from '../composables/useAnnouncements'
 import StatusBadge from './shared/StatusBadge.vue'
 import PageHeader from './shared/PageHeader.vue'
 import AppSnackbar from '@/components/shared/AppSnackbar.vue'
-import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
-import { useImageHandler } from '@/composables/useImageHandler'
-import { useDeleteConfirmation } from '@/composables/useDeleteConfirmation'
-import { useFormDialog } from '@/composables/useFormDialog'
 import { usePageActions } from '@/composables/usePageActions'
 import { formatDate } from '@/utils/formatters'
 
@@ -20,103 +18,27 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const router = useRouter()
 const drawer = inject<Ref<boolean>>('drawer')
 
 const {
-  carouselSlides,
   activities,
-  loading,
-  error,
-  fetchCarouselSlides,
+  loading: dashboardLoading,
+  error: dashboardError,
   fetchDashboardActivities,
-  createCarouselSlide,
-  updateCarouselSlide,
-  deleteCarouselSlide,
-  setupRealtimeSubscription,
+  setupRealtimeSubscription: setupDashboardRealtime,
 } = useDashboard()
+
+const {
+  announcements,
+  fetchAnnouncements,
+  setupRealtimeSubscription: setupAnnouncementsRealtime,
+} = useAnnouncements()
 
 const { snackbar, snackbarMessage, snackbarColor, showSnackbar } = useSnackbar()
 
-const deleteConfirmation = useDeleteConfirmation({
-  onDelete: async (id: number) => {
-    return await deleteCarouselSlide(id)
-  },
-  showSnackbar,
-  successMessage: 'Carousel slide deleted successfully',
-  errorMessage: 'Failed to delete slide',
-})
-
 const { handleSettingsClick } = usePageActions({
   userType: props.userType,
-})
-
-const {
-  imageFile,
-  imagePreview,
-  handleImageSelect,
-  removeImage,
-  error: imageError,
-} = useImageHandler({
-  maxSizeInMB: 5,
-  allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
-})
-
-const slideDialog = useFormDialog<{
-  title: string
-  description: string
-  order_index: number
-  is_active: boolean
-  id?: number
-  image_url?: string
-}>({
-  initialData: () => ({
-    title: '',
-    description: '',
-    order_index: carouselSlides.value.length,
-    is_active: true,
-  }),
-  validate: (data) => {
-    if (!data.title || !data.description) {
-      return { valid: false, message: 'Please fill in all required fields' }
-    }
-    if (!slideDialog.isEditing.value && !imageFile.value) {
-      return { valid: false, message: 'Please select an image' }
-    }
-    return { valid: true }
-  },
-  onSubmit: async (data, isEditing): Promise<{ success: boolean; error?: string }> => {
-    if (isEditing && data.id) {
-      return await updateCarouselSlide(data.id, data, imageFile.value)
-    } else {
-      if (!imageFile.value) {
-        return { success: false, error: 'Please select an image' }
-      }
-      return await createCarouselSlide(
-        {
-          ...data,
-          image_url: '',
-        },
-        imageFile.value,
-      )
-    }
-  },
-  onOpen: () => {
-    imageFile.value = null
-    imagePreview.value = slideDialog.editingItem.value?.image_url || null
-
-    if (!slideDialog.isEditing.value) {
-      slideDialog.formData.value.order_index = carouselSlides.value.length
-    }
-  },
-  showSnackbar,
-  successMessage: {
-    create: 'Slide created successfully!',
-    update: 'Slide updated successfully!',
-  },
-  errorMessage: {
-    create: 'Failed to save slide',
-    update: 'Failed to save slide',
-  },
 })
 
 const isHovering = ref(false)
@@ -162,9 +84,9 @@ const initializeMap = () => {
 }
 
 onMounted(async () => {
-  await fetchCarouselSlides()
-  await fetchDashboardActivities()
-  setupRealtimeSubscription()
+  await Promise.all([fetchAnnouncements(), fetchDashboardActivities()])
+  setupDashboardRealtime()
+  setupAnnouncementsRealtime()
 
   setTimeout(() => {
     initializeMap()
@@ -180,19 +102,9 @@ onBeforeUnmount(() => {
   }
 })
 
-const handleAddSlide = () => {
-  if (props.userType !== 'admin') return
-  slideDialog.openForCreate()
-}
-
-const handleEditSlide = (slide: any) => {
-  if (props.userType !== 'admin') return
-  slideDialog.openForEdit(slide)
-}
-
-const confirmDelete = (id: number) => {
-  if (props.userType !== 'admin') return
-  deleteConfirmation.openDialog(id)
+const goToAnnouncement = (id: number) => {
+  const prefix = props.userType === 'admin' ? '/admin' : '/user'
+  router.push(`${prefix}/announcements?id=${id}`)
 }
 
 const pageTitle = computed(() => (props.userType === 'admin' ? 'Admin Dashboard' : 'Welcome Back!'))
@@ -215,14 +127,6 @@ const getStatusColor = (status: string) => {
       return 'grey'
   }
 }
-
-const isFormValid = computed(() => {
-  return !!(
-    slideDialog.formData.value.title &&
-    slideDialog.formData.value.description &&
-    (slideDialog.isEditing.value || imageFile.value || imagePreview.value)
-  )
-})
 
 const carouselCycle = computed(() => !isHovering.value)
 
@@ -340,33 +244,33 @@ const resetMapView = () => {
     />
 
     <!-- Loading State -->
-    <div v-if="loading && carouselSlides.length === 0" class="text-center py-12">
+    <div v-if="dashboardLoading && announcements.length === 0" class="text-center py-12">
       <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
       <p class="text-h6 mt-4">Loading dashboard...</p>
     </div>
 
     <!-- Error State -->
-    <v-alert v-if="error" type="error" class="mb-6" closable>
-      {{ error }}
+    <v-alert v-if="dashboardError" type="error" class="mb-6" closable>
+      {{ dashboardError }}
     </v-alert>
 
     <!-- Main Dashboard Content -->
-    <v-row v-if="!loading || carouselSlides.length > 0">
+    <v-row v-if="!dashboardLoading || announcements.length > 0">
       <!-- Left Column: Carousel and Map -->
       <v-col cols="12" md="6">
         <v-row>
           <v-col cols="12">
             <v-card class="modern-card fill-height">
               <v-card-title class="d-flex justify-space-between align-center pa-6">
-                <span class="text-h6">Farm Highlights</span>
+                <!-- <span class="text-h6">Farm Highlights</span> -->
                 <v-btn
                   v-if="userType === 'admin'"
                   color="primary"
+                  variant="text"
                   size="small"
-                  prepend-icon="mdi-plus"
-                  @click="handleAddSlide"
+                  to="/admin/announcements"
                 >
-                  Add Slide
+                  Manage
                 </v-btn>
               </v-card-title>
 
@@ -374,47 +278,46 @@ const resetMapView = () => {
 
               <v-card-text class="pa-0">
                 <!-- Carousel -->
-                <div v-if="carouselSlides.length > 0">
+                <div v-if="announcements.length > 0">
                   <v-carousel
-                    height="400"
+                    height="580"
+                    class="farm-highlights-carousel pointer-cursor"
                     :cycle="carouselCycle"
-                    :show-arrows="carouselSlides.length > 1"
+                    :show-arrows="announcements.length > 1"
                     hide-delimiter-background
                     @mouseenter="isHovering = true"
                     @mouseleave="isHovering = false"
                   >
-                    <v-carousel-item v-for="slide in carouselSlides" :key="slide.id">
-                      <v-img :src="slide.image_url" height="400" cover>
-                        <div class="carousel-overlay">
-                          <div class="carousel-content">
-                            <h2 class="text-h4 font-weight-bold mb-2">{{ slide.title }}</h2>
-                            <p class="text-body-1 mb-3">{{ slide.description }}</p>
-
-                            <!-- Admin Actions on Slide -->
-                            <div v-if="userType === 'admin'" class="mt-4">
-                              <v-btn
-                                color="white"
-                                variant="elevated"
-                                size="default"
-                                class="mr-2"
-                                prepend-icon="mdi-pencil"
-                                @click="handleEditSlide(slide)"
-                              >
-                                Edit
-                              </v-btn>
-                              <v-btn
-                                color="error"
-                                variant="elevated"
-                                size="default"
-                                prepend-icon="mdi-delete"
-                                @click="confirmDelete(slide.id)"
-                              >
-                                Delete
-                              </v-btn>
-                            </div>
-                          </div>
+                    <v-carousel-item
+                      v-for="slide in announcements.slice(0, 5)"
+                      :key="slide.id"
+                      @click="goToAnnouncement(slide.id)"
+                    >
+                      <div class="d-flex flex-column h-100">
+                        <v-img
+                          :src="slide.image_url || '/placeholder.jpg'"
+                          height="420"
+                          cover
+                        ></v-img>
+                        <div
+                          class="pa-6 bg-white flex-grow-1 d-flex flex-column justify-center align-start"
+                        >
+                          <h2 class="text-h5 font-weight-bold mb-2">{{ slide.title }}</h2>
+                          <p
+                            class="text-body-2 mb-0 text-grey-darken-2"
+                            style="
+                              display: -webkit-box;
+                              -webkit-line-clamp: 2;
+                              line-clamp: 2;
+                              -webkit-box-orient: vertical;
+                              overflow: hidden;
+                              text-overflow: ellipsis;
+                            "
+                          >
+                            {{ slide.description }}
+                          </p>
                         </div>
-                      </v-img>
+                      </div>
                     </v-carousel-item>
                   </v-carousel>
                 </div>
@@ -422,27 +325,18 @@ const resetMapView = () => {
                 <!-- Empty State -->
                 <div v-else class="text-center py-12">
                   <v-icon icon="mdi-image-off" size="80" color="grey-lighten-1"></v-icon>
-                  <p class="text-h6 mt-4">No carousel slides yet</p>
-                  <p class="text-body-2 text-grey">
-                    {{
-                      userType === 'admin' ? 'Add slides to showcase your farm' : 'Check back later'
-                    }}
-                  </p>
-                  <v-btn
-                    v-if="userType === 'admin'"
-                    color="primary"
-                    variant="elevated"
-                    class="mt-4"
-                    prepend-icon="mdi-plus"
-                    @click="handleAddSlide"
-                  >
-                    Add First Slide
-                  </v-btn>
+                  <p class="text-h6 mt-4">No announcements yet</p>
+                  <p class="text-body-2 text-grey">Check back later</p>
                 </div>
               </v-card-text>
             </v-card>
           </v-col>
+        </v-row>
+      </v-col>
 
+      <!-- Right Column: Activities -->
+      <v-col cols="12" md="6">
+        <v-row>
           <!-- Farm Location Map -->
           <v-col cols="12">
             <v-card class="modern-card">
@@ -521,18 +415,13 @@ const resetMapView = () => {
               </v-card-text>
             </v-card>
           </v-col>
-        </v-row>
-      </v-col>
 
-      <!-- Right Column: Activities -->
-      <v-col cols="12" md="6">
-        <v-row>
           <!-- Farm Activities -->
           <v-col cols="12">
             <v-card class="modern-card">
               <v-card-title class="pa-6">
                 <v-icon icon="mdi-leaf" class="mr-2" color="success"></v-icon>
-                <span class="text-h6">Upcoming Activities</span>
+                <span class="text-h6">Upcoming Farm Activities</span>
               </v-card-title>
 
               <v-divider></v-divider>
@@ -598,130 +487,6 @@ const resetMapView = () => {
       </v-col>
     </v-row>
 
-    <!-- Admin: Add/Edit Slide Dialog -->
-    <v-dialog v-if="userType === 'admin'" v-model="slideDialog.isOpen.value" max-width="700px">
-      <v-card class="modern-dialog">
-        <v-card-title class="pa-6 text-h5 font-weight-bold">
-          {{ slideDialog.isEditing.value ? 'Edit Carousel Slide' : 'New Carousel Slide' }}
-        </v-card-title>
-
-        <v-divider></v-divider>
-
-        <v-card-text class="pa-6">
-          <v-form @submit.prevent="slideDialog.submit">
-            <v-text-field
-              v-model="slideDialog.formData.value.title"
-              label="Title *"
-              placeholder="Enter slide title"
-              variant="outlined"
-              density="comfortable"
-              :rules="[(v: any) => !!v || 'Title is required']"
-              class="mb-4"
-            ></v-text-field>
-
-            <v-textarea
-              v-model="slideDialog.formData.value.description"
-              label="Description *"
-              placeholder="Enter slide description"
-              variant="outlined"
-              density="comfortable"
-              rows="4"
-              :rules="[(v: any) => !!v || 'Description is required']"
-              class="mb-4"
-            ></v-textarea>
-
-            <v-text-field
-              v-model.number="slideDialog.formData.value.order_index"
-              label="Display Order"
-              placeholder="0"
-              variant="outlined"
-              density="comfortable"
-              type="number"
-              min="0"
-              hint="Lower numbers appear first"
-              persistent-hint
-              class="mb-4"
-            ></v-text-field>
-
-            <v-switch
-              v-model="slideDialog.formData.value.is_active"
-              label="Active"
-              color="primary"
-              class="mb-4"
-            ></v-switch>
-
-            <!-- Image Upload Section -->
-            <div class="mb-4">
-              <v-label class="text-subtitle-2 mb-2">Image *</v-label>
-
-              <!-- Image Preview -->
-              <div v-if="imagePreview" class="mb-3">
-                <v-card variant="outlined" class="pa-2">
-                  <div class="d-flex align-center justify-space-between">
-                    <v-img
-                      :src="imagePreview"
-                      max-height="200"
-                      max-width="300"
-                      contain
-                      class="rounded"
-                    ></v-img>
-                    <v-btn
-                      icon="mdi-close"
-                      size="small"
-                      variant="text"
-                      color="error"
-                      @click="removeImage"
-                    ></v-btn>
-                  </div>
-                </v-card>
-              </div>
-
-              <!-- File Input -->
-              <v-file-input
-                v-else
-                label="Upload Image"
-                placeholder="Choose an image"
-                variant="outlined"
-                density="comfortable"
-                prepend-icon=""
-                prepend-inner-icon="mdi-image"
-                accept="image/*"
-                :rules="[
-                  (v: any) =>
-                    !v || !v.length || v[0].size < 5000000 || 'Image size should be less than 5MB',
-                ]"
-                @change="handleImageSelect"
-              ></v-file-input>
-            </div>
-          </v-form>
-        </v-card-text>
-
-        <v-divider></v-divider>
-
-        <v-card-actions class="px-6 py-4">
-          <v-spacer></v-spacer>
-          <v-btn variant="text" @click="slideDialog.close"> Cancel </v-btn>
-          <v-btn
-            color="primary"
-            variant="elevated"
-            :loading="slideDialog.isSubmitting.value"
-            :disabled="!isFormValid"
-            @click="slideDialog.submit"
-          >
-            {{ slideDialog.isEditing.value ? 'Update' : 'Create' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <DeleteConfirmDialog
-      v-model="deleteConfirmation.isOpen.value"
-      :is-deleting="deleteConfirmation.isDeleting.value"
-      title="Confirm Delete"
-      message="Are you sure you want to delete this carousel slide"
-      @confirm="deleteConfirmation.confirmDelete"
-    />
-
     <AppSnackbar
       v-model="snackbar"
       :message="snackbarMessage"
@@ -735,31 +500,6 @@ const resetMapView = () => {
 <style scoped>
 .dashboard-container {
   width: 100%;
-}
-
-/* Carousel Overlay Styling */
-.carousel-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.8) 0%,
-    rgba(0, 0, 0, 0.4) 50%,
-    transparent 100%
-  );
-  padding: 2rem;
-  color: white;
-}
-
-.carousel-content {
-  max-width: 600px;
-}
-
-.carousel-content h2,
-.carousel-content p {
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 /* Map Container */
@@ -830,5 +570,15 @@ const resetMapView = () => {
   .carousel-content p {
     font-size: 0.85rem;
   }
+}
+
+/* Farm Highlights Carousel Customization */
+:deep(.farm-highlights-carousel .v-carousel__controls) {
+  top: 0;
+  bottom: auto;
+}
+
+.pointer-cursor {
+  cursor: pointer;
 }
 </style>

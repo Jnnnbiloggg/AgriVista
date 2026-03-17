@@ -2,6 +2,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAnnouncements } from '../composables/useAnnouncements'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
@@ -22,6 +23,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const drawer = inject<Ref<boolean>>('drawer')
+const route = useRoute()
+const router = useRouter()
 
 // Get user info from auth store
 const authStore = useAuthStore()
@@ -196,6 +199,19 @@ const announcementDialog = useFormDialog<{
 onMounted(async () => {
   await fetchAnnouncements()
   setupRealtimeSubscription()
+
+  if (route.query.id) {
+    const id = Number(route.query.id)
+    const announcement = announcements.value.find((a) => a.id === id)
+    if (announcement) {
+      openAnnouncement(announcement)
+    }
+    
+    // Clean up query param after opening to avoid reopening on refresh
+    const query = { ...route.query }
+    delete query.id
+    router.replace({ query })
+  }
 })
 
 // Admin-only functions
@@ -765,9 +781,8 @@ const handleUnarchiveAnnouncement = async (item: any) => {
       @confirm="deleteConfirmation.confirmDelete"
     />
 
-    <!-- User: Full Announcement Dialog -->
+    <!-- Full Announcement Dialog (View-Only) -->
     <v-dialog
-      v-if="userType === 'user'"
       v-model="showAnnouncementDialog"
       width="800px"
       max-height="800px"
